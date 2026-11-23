@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import { produce } from 'immer'
-import { FLICKS, FRAME, addAsset, clips, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim, type Asset, type Doc } from './model'
+import { FLICKS, FRAME, addAsset, clips, move, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim, type Asset, type Doc } from './model'
 import { useStore } from './store'
 import { sniff } from './sniff'
 
@@ -40,6 +40,13 @@ describe('commands', () => {
     expect(shape(d)[1]).toEqual(['c2', 10, 5, 0])
     d = edit(d, (d) => trim(d, 'c2', 'out', -100 * FLICKS)) // keeps at least one frame
     expect(clips(d)[1].duration).toBe(FRAME)
+  })
+
+  it('reorders clips for merging, ignoring moves past either end', () => {
+    const d = edit(twoClips(), (d) => move(d, 'c2', -1))
+    expect(shape(d)).toEqual([['c2', 0, 5, 0], ['c1', 5, 10, 0]])
+    expect(edit(d, (x) => move(x, 'c2', -1))).toBe(d)
+    expect(edit(d, (x) => move(x, 'c1', 1))).toBe(d)
   })
 
   it('ripple-deletes and closes the gap', () => {

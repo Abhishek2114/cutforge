@@ -1,5 +1,8 @@
 const en = {
-  drop: 'Drop videos here, or click to choose (MP4, MOV, WebM, MKV)',
+  drop: 'Drop one or more videos here, or click to choose. They are joined in order into one video (MP4, MOV, WebM, MKV)',
+  moveEarlier: '◀ Move earlier',
+  moveLater: 'Move later ▶',
+  moved: 'Clip moved',
   add: 'Add video',
   play: 'Play',
   pause: 'Pause',
@@ -38,7 +41,10 @@ const en = {
 }
 
 const hi: typeof en = {
-  drop: 'वीडियो यहाँ छोड़ें, या चुनने के लिए क्लिक करें (MP4, MOV, WebM, MKV)',
+  drop: 'एक या ज़्यादा वीडियो यहाँ छोड़ें, या चुनने के लिए क्लिक करें। वे क्रम से जुड़कर एक वीडियो बनेंगे (MP4, MOV, WebM, MKV)',
+  moveEarlier: '◀ पहले ले जाएँ',
+  moveLater: 'बाद में ले जाएँ ▶',
+  moved: 'क्लिप की जगह बदली',
   add: 'वीडियो जोड़ें',
   play: 'चलाएँ',
   pause: 'रोकें',

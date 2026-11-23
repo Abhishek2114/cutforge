@@ -137,6 +137,19 @@ export function trim(d: Doc, id: string, edge: 'in' | 'out', delta: number) {
   pack(d)
 }
 
+export function move(d: Doc, id: string, dir: -1 | 1) {
+  const list = clips(d)
+  const i = list.findIndex((c) => c.id === id)
+  const j = i + dir
+  if (i < 0 || j < 0 || j >= list.length) return
+  ;[list[i], list[j]] = [list[j], list[i]]
+  let t = 0
+  for (const c of list) {
+    c.start = t
+    t += c.duration
+  }
+}
+
 export function rippleDelete(d: Doc, id: string) {
   delete seq(d).items[id]
   pack(d)

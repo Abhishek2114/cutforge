@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { useStore } from './store'
 import {
-  ASPECTS, FLICKS, FRAME, addAsset, clips, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim,
+  ASPECTS, FLICKS, FRAME, addAsset, clips, move, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim,
   type Aspect, type Asset, type Doc, type Fit,
 } from './model'
 import { Player } from './player'
@@ -258,6 +258,12 @@ export function App() {
           <span className="time"><span ref={timeRef}>0:00.00</span> / {fmt(total)}</span>
           <button onClick={doSplit} disabled={!total}>{s.split}</button>
           <button onClick={doDelete} disabled={!sel}>{s.del}</button>
+          {sel && list.length > 1 && (
+            <>
+              <button onClick={() => act(s.moved, (d) => move(d, sel.id, -1))} disabled={sel.start === 0}>{s.moveEarlier}</button>
+              <button onClick={() => act(s.moved, (d) => move(d, sel.id, 1))} disabled={sel.start + sel.duration >= total}>{s.moveLater}</button>
+            </>
+          )}
           {sel && (
             <div role="group" aria-label={s.fitMode} className="seg">
               {(['fit', 'fill', 'blur'] as Fit[]).map((f) => (
