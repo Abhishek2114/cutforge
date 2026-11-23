@@ -8,6 +8,9 @@ A Hindi-first, non-destructive video editor for Indian creators, built as a web 
 
 ## Run the editor
 
+**Live:** https://abhishek2114.github.io/cutforge/ (deployed from `main` by [pages.yml](.github/workflows/pages.yml)). Best in Chrome or Edge.
+
+Or run locally:
 ```bash
 cd apps/web && npm install && npm run dev
 ```
