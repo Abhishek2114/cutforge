@@ -18,7 +18,13 @@ Open http://localhost:5173 and drop in a video (MP4, MOV, WebM or MKV). You can 
 - trim (drag the clip edges), split (S), ripple-delete (Del), undo/redo (Ctrl/⌘+Z/Y);
 - switch ratio (16:9, 9:16, 1:1, 4:5, 21:9) with Fit / Fill / Blur-background framing;
 - export an MP4 (WebM in browsers without an MP4 recorder);
-- switch the UI between Hindi and English.
+- switch the UI between Hindi and English;
+- click **✨ Auto edit** (or press A) to let the app decide three things in one undoable step:
+  - **cut silences and dead air:** it measures each recording's own noise floor and only cuts pauses over 0.5 s, keeping 0.1 s of breathing room;
+  - **fix colour:** brightness, contrast and saturation from frame statistics, stored as editable settings;
+  - **pick framing:** Fill when the crop is small, otherwise Blur-background.
+
+  It runs entirely in the browser, so it's free, private and works offline.
 
 Every edit autosaves, and reloading the page restores the project and its media.
 
@@ -49,12 +55,12 @@ The brief asks for 7 deliverables, with a stop for approval after each. Delivera
 | 2. Sequence: multi-track, trim/split/ripple, unlimited undo | §1 Bet 3, §4 · schema `sequence/tracks/items` | **Trim/split/ripple/undo built + tested (one track)**; multi-track designed |
 | 3. Ratio presets, Fit/Fill/Blur, auto-reframe | §5 step 4, §7 · schema `clip.reframe` per aspect · API `reframe` job | **Presets + Fit/Fill/Blur built**; auto-reframe designed |
 | 4. Motion, transitions, keyframes, speed ramps | §5 steps 1, 5 · schema `transition`, `keyframe`, `speed` | Designed |
-| 4. Auto colour grading, match, log, LUT, skin protection, parity | §5 step 3 (one 3D LUT per clip) + golden-frame contract, §7 · schema `grade`, `look` | Designed |
+| 4. Auto colour grading, match, log, LUT, skin protection, parity | §5 step 3 (one 3D LUT per clip) + golden-frame contract, §7 · schema `grade`, `look` | **One-click auto colour (exposure/contrast/saturation) built + tested**; match, LUTs, skin protection designed |
 | 5. Hindi/English/Hinglish subtitles, translate, transliterate, fix pass | §7 · API `transcribe/translate/transliterate/fix_subtitles` · `transcripts`, `dictionary_entries` | Designed |
 | 5. Devanagari rendering (HarfBuzz, libass, Noto/Mukta/Poppins) | §5 step 7 · schema `textStyle/captionStyle` (bundled fonts only) | Designed |
 | 5. Subtitles stay in sync after edits | §1 Bet 2: captions stored in source time | Designed |
 | 6. Highlights, make 5 reels, clip library | §7 · API `highlights` · `library_clips` | Designed |
-| 6. Auto silence cutter: VAD, controls, modes, review, smoothing, fillers | §7 · schema `cutSets` (editable regions, accept/reject) | Designed |
+| 6. Auto silence cutter: VAD, controls, modes, review, smoothing, fillers | §7 · schema `cutSets` (editable regions, accept/reject) | **One-click silence removal built + tested** (adaptive loudness, padding, undoable); neural VAD, review mode, fillers designed |
 | 7. Export: formats, presets, queue, resume, notifications | §8 · API `export` job, `/v1/events` | **Browser MP4/WebM export built**; presets, queue, cloud designed |
 | Non-destructive versioned JSON + migrations | §9 · [project.schema.json](packages/project-schema/project.schema.json) | **Built + tested** (the editor's saved project validates against it in CI) |
 | Autosave, crash recovery, offline | §9 | **Local autosave + recovery built**; server sync designed |

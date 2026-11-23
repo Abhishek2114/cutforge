@@ -2,16 +2,21 @@ import { expect, test, type Page } from '@playwright/test'
 import { readFileSync } from 'node:fs'
 
 // Records a real video (with audio) inside the browser and returns its bytes.
-async function makeVideo(page: Page, label: string, w: number, h: number, secs: number, color: string) {
-  const b64 = await page.evaluate(async ([label, w, h, secs, color]) => {
+async function makeVideo(page: Page, label: string, w: number, h: number, secs: number, color: string, mute: [number, number] = [0, 0]) {
+  const b64 = await page.evaluate(async ([label, w, h, secs, color, mute]) => {
     const c = document.createElement('canvas')
     c.width = w
     c.height = h
     const g = c.getContext('2d')!
     const ac = new AudioContext()
     const osc = ac.createOscillator()
+    const gain = ac.createGain()
     const dst = ac.createMediaStreamDestination()
-    osc.connect(dst)
+    osc.connect(gain).connect(dst)
+    if (mute[1] > mute[0]) { // a pause in the "speech"
+      gain.gain.setValueAtTime(0, ac.currentTime + mute[0])
+      gain.gain.setValueAtTime(1, ac.currentTime + mute[1])
+    }
     osc.start()
     const rec = new MediaRecorder(new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]), { mimeType: 'video/webm' })
     const chunks: Blob[] = []
@@ -39,7 +44,7 @@ async function makeVideo(page: Page, label: string, w: number, h: number, secs: 
     let s = ''
     for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
     return btoa(s)
-  }, [label, w, h, secs, color] as const)
+  }, [label, w, h, secs, color, mute] as const)
   return Buffer.from(b64, 'base64')
 }
 
@@ -266,6 +271,34 @@ test('every control in the editor works', async ({ page }) => {
     await btn('New project').click()
     await expect(page.locator('.clip')).toHaveCount(0)
     await expect(btn(/Drop one or more videos/)).toBeVisible()
+  })
+
+  await test.step('✨ Auto edit cuts the pause, fixes colour and framing; Ctrl+Z undoes it', async () => {
+    const C = await makeVideo(page, 'C', 640, 360, 4, '#262626', [1.2, 2.6]) // dark, silent from 1.2 s to 2.6 s
+    const chooser = page.waitForEvent('filechooser')
+    await btn(/Drop one or more videos/).click()
+    await (await chooser).setFiles({ name: 'C.webm', mimeType: 'video/webm', buffer: C })
+    await expect(page.locator('.clip')).toHaveCount(1)
+    const before = (await timeline(page))[0].secs
+
+    await btn('✨ Auto edit').click()
+    await expect(page.locator('.status')).toContainText(/^Auto edit: removed 1 pauses \(\d\.\d s saved\), fixed colour on 1 clips/, { timeout: 30_000 })
+    const after = await timeline(page)
+    expect(after.map((c) => c.name)).toEqual(['C.webm', 'C.webm']) // speech before and after the pause
+    const cut = before - (after[0].secs + after[1].secs)
+    expect(cut).toBeGreaterThan(0.6) // the 1.4 s pause minus breathing room (recorder timing shifts it a little)
+    expect(cut).toBeLessThan(1.4) // never eats into the speech
+    const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('cutforge:doc')!).sequences.s1.items) as any[])
+    for (const clip of saved) {
+      expect(clip.grade.enabled).toBe(true)
+      expect(clip.grade.correction.exposure).toBeGreaterThan(0) // dark footage brightened
+      expect(clip.fit).toBe('fill') // 16:9 video in a 16:9 sequence
+    }
+
+    await page.locator('.time').click()
+    await page.keyboard.press('Control+z')
+    await expect(page.locator('.clip')).toHaveCount(1)
+    expect((await timeline(page))[0].secs).toBe(before)
   })
 
   expect(errors).toEqual([])

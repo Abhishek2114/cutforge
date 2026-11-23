@@ -1,5 +1,9 @@
 const en = {
   drop: 'Drop one or more videos here, or click to choose. They are joined in order into one video (MP4, MOV, WebM, MKV)',
+  autoEdit: '✨ Auto edit',
+  autoBusy: 'Analysing your videos…',
+  autoDone: 'Auto edit: removed {n} pauses ({s} s saved), fixed colour on {m} clips, set framing. Ctrl+Z to undo.',
+  autoFailed: 'Auto edit could not analyse these videos in this browser',
   moveEarlier: '◀ Move earlier',
   moveLater: 'Move later ▶',
   moved: 'Clip moved',
@@ -37,11 +41,15 @@ const en = {
   mediaNotSaved: 'Media could not be saved for recovery in this browser',
   missing: 'Media missing',
   restored: 'Project restored',
-  hint: 'Space play/pause · J/K/L · ←/→ frame (Shift: 1 s) · S split · Del delete · Alt+←/→ trim end (Shift: start) · Ctrl/⌘+Z/Y undo/redo',
+  hint: 'A auto edit · Space play/pause · J/K/L · ←/→ frame (Shift: 1 s) · S split · Del delete · Alt+←/→ trim end (Shift: start) · Ctrl/⌘+Z/Y undo/redo',
 }
 
 const hi: typeof en = {
   drop: 'एक या ज़्यादा वीडियो यहाँ छोड़ें, या चुनने के लिए क्लिक करें। वे क्रम से जुड़कर एक वीडियो बनेंगे (MP4, MOV, WebM, MKV)',
+  autoEdit: '✨ ऑटो एडिट',
+  autoBusy: 'आपके वीडियो जाँचे जा रहे हैं…',
+  autoDone: 'ऑटो एडिट: {n} रुकावटें हटाईं ({s} सेकंड बचे), {m} क्लिप का रंग सुधारा, फ़्रेमिंग सेट की। वापस करने के लिए Ctrl+Z।',
+  autoFailed: 'इस ब्राउज़र में ऑटो एडिट इन वीडियो को जाँच नहीं सका',
   moveEarlier: '◀ पहले ले जाएँ',
   moveLater: 'बाद में ले जाएँ ▶',
   moved: 'क्लिप की जगह बदली',
@@ -79,7 +87,7 @@ const hi: typeof en = {
   mediaNotSaved: 'इस ब्राउज़र में रिकवरी के लिए मीडिया सेव नहीं हो सका',
   missing: 'मीडिया नहीं मिला',
   restored: 'प्रोजेक्ट वापस लाया गया',
-  hint: 'Space चलाएँ/रोकें · J/K/L · ←/→ फ़्रेम (Shift: 1 सेकंड) · S स्प्लिट · Del हटाएँ · Alt+←/→ अंत ट्रिम (Shift: शुरुआत) · Ctrl/⌘+Z/Y पूर्ववत/फिर से',
+  hint: 'A ऑटो एडिट · Space चलाएँ/रोकें · J/K/L · ←/→ फ़्रेम (Shift: 1 सेकंड) · S स्प्लिट · Del हटाएँ · Alt+←/→ अंत ट्रिम (Shift: शुरुआत) · Ctrl/⌘+Z/Y पूर्ववत/फिर से',
 }
 
 export type Lang = 'en' | 'hi'

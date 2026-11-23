@@ -1,3 +1,5 @@
+import { current, isDraft } from 'immer'
+
 // Project document in the shape of packages/project-schema (schemaVersion 1) + pure edit commands.
 // MVP: one sequence, one magnetic video track (clips always packed end to end).
 
@@ -31,6 +33,8 @@ export interface Asset {
   }
 }
 
+export interface Correction { exposure: number; contrast: number; saturation: number }
+
 export interface Clip {
   id: string
   type: 'clip'
@@ -40,6 +44,7 @@ export interface Clip {
   duration: number
   sourceIn: number
   fit: Fit
+  grade?: { enabled: boolean; source: 'auto'; correction: Correction } // parametric, never baked into media
 }
 
 export interface Sequence {
@@ -148,6 +153,35 @@ export function move(d: Doc, id: string, dir: -1 | 1) {
     c.start = t
     t += c.duration
   }
+}
+
+// Cuts (source-time flicks) out of a clip, leaving the kept parts as separate clips; the gaps close.
+export function removeRanges(d: Doc, id: string, cuts: [number, number][], newId: () => string) {
+  const live = seq(d).items[id]
+  if (!live) return
+  const c = isDraft(live) ? current(live) : live // a clip added earlier in the same edit is still a plain object
+  const a = c.sourceIn, b = c.sourceIn + c.duration
+  const keep: [number, number][] = []
+  let at = a
+  for (const [s, e] of [...cuts].sort((x, y) => x[0] - y[0])) {
+    if (e <= at || s >= b) continue
+    if (s > at) keep.push([at, Math.min(s, b)])
+    at = Math.max(at, e)
+  }
+  if (at < b) keep.push([at, b])
+  const parts = keep.filter(([s, e]) => e - s >= FRAME)
+  if (parts.length === 1 && parts[0][0] === a && parts[0][1] === b) return
+  delete seq(d).items[id]
+  parts.forEach(([s, e], i) => {
+    const nid = i === 0 ? id : newId()
+    seq(d).items[nid] = { ...c, id: nid, sourceIn: s, duration: e - s, start: c.start + (s - a) }
+  })
+  pack(d)
+}
+
+export function setGrade(d: Doc, id: string, correction: Correction) {
+  const c = seq(d).items[id]
+  if (c) c.grade = { enabled: true, source: 'auto', correction }
 }
 
 export function rippleDelete(d: Doc, id: string) {

@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState, type PointerEvent as RPointerEvent } from 'react'
 import { useStore } from './store'
 import {
-  ASPECTS, FLICKS, FRAME, addAsset, clips, move, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim,
-  type Aspect, type Asset, type Doc, type Fit,
+  ASPECTS, FLICKS, FRAME, addAsset, clips, move, newDoc, removeRanges, rippleDelete, seq, setAspect, setFit, setGrade, split,
+  totalDuration, trim, type Aspect, type Asset, type Correction, type Doc, type Fit,
 } from './model'
+import { analyseFrames, autoCorrection, decodeAudio, findSilences, framingFor } from './auto'
 import { Player } from './player'
 import { sniff } from './sniff'
 import { clearAll, loadDoc, loadFile, saveDoc, saveFile } from './persist'
@@ -41,6 +42,7 @@ export function App() {
   const [progress, setProgress] = useState<number | null>(null)
   const [missing, setMissing] = useState<Set<string>>(new Set())
   const [drag, setDrag] = useState<Drag | null>(null)
+  const [busy, setBusy] = useState(false)
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const playheadRef = useRef<HTMLDivElement>(null)
   const timeRef = useRef<HTMLSpanElement>(null)
@@ -99,6 +101,49 @@ export function App() {
       } catch {
         setStatus(`${f.name}: ${s.cantDecode}`)
       }
+    }
+  }
+
+  // One click: measure every video, then cut pauses, fix colour and pick framing as ONE undoable edit.
+  async function doAutoEdit() {
+    if (busy || !totalDuration(current())) return
+    setBusy(true)
+    setStatus(s.autoBusy)
+    player.pause()
+    try {
+      const d0 = current()
+      const pauses = new Map<string, [number, number][]>()
+      const looks = new Map<string, Correction>()
+      for (const id of new Set(clips(d0).map((c) => c.assetId))) {
+        const url = player.url(id)
+        if (!url) continue // media missing after a restore
+        const pcm = await decodeAudio(url)
+        pauses.set(id, pcm ? findSilences(pcm.samples, pcm.rate).map(([a, b]) => [Math.round(a * FLICKS), Math.round(b * FLICKS)]) : [])
+        looks.set(id, autoCorrection(await analyseFrames(url, d0.assets[id].duration / FLICKS)))
+      }
+      let n = 0, saved = 0
+      for (const c of clips(d0)) {
+        for (const [a, b] of pauses.get(c.assetId) ?? []) {
+          const cut = Math.min(b, c.sourceIn + c.duration) - Math.max(a, c.sourceIn)
+          if (cut > 0) { n++; saved += cut }
+        }
+      }
+      const { width: SW, height: SH } = seq(d0).settings
+      useStore.getState().run(s.autoEdit, (d) => {
+        for (const id of clips(d).map((c) => c.id)) removeRanges(d, id, pauses.get(seq(d).items[id].assetId) ?? [], newId)
+        for (const c of clips(d)) {
+          const look = looks.get(c.assetId)
+          if (look) setGrade(d, c.id, look)
+          const v = d.assets[c.assetId].video
+          setFit(d, c.id, framingFor(v.width, v.height, SW, SH))
+        }
+      })
+      setSelected(null)
+      setStatus(s.autoDone.replace('{n}', String(n)).replace('{s}', (saved / FLICKS).toFixed(1)).replace('{m}', String(looks.size)))
+    } catch {
+      setStatus(s.autoFailed)
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -186,6 +231,7 @@ export function App() {
     else if (key === 'l') player.play(current())
     else if (key === 'j') seekTo(player.t - FLICKS)
     else if (key === 's') doSplit()
+    else if (key === 'a') void doAutoEdit()
     else if (key === 'delete' || key === 'backspace') doDelete()
     else if ((key === 'arrowleft' || key === 'arrowright') && e.altKey && selected) {
       e.preventDefault()
@@ -232,6 +278,9 @@ export function App() {
           ))}
         </div>
         <span className="spacer" />
+        <button className="primary" onClick={() => void doAutoEdit()} disabled={!total || busy || progress !== null} aria-busy={busy}>
+          {busy ? s.autoBusy : s.autoEdit}
+        </button>
         <button onClick={doUndo} disabled={!canUndo}>{s.undo}</button>
         <button onClick={doRedo} disabled={!canRedo}>{s.redo}</button>
         <button className="primary" onClick={() => void doExport()} disabled={!total || progress !== null}>

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 import Ajv2020 from 'ajv/dist/2020.js'
 import addFormats from 'ajv-formats'
 import { produce } from 'immer'
-import { FLICKS, FRAME, addAsset, clips, move, newDoc, rippleDelete, seq, setAspect, setFit, split, totalDuration, trim, type Asset, type Doc } from './model'
+import { FLICKS, FRAME, addAsset, clips, move, newDoc, removeRanges, rippleDelete, seq, setAspect, setFit, setGrade, split, totalDuration, trim, type Asset, type Doc } from './model'
 import { useStore } from './store'
 import { sniff } from './sniff'
 
@@ -87,7 +87,10 @@ describe('project file', () => {
     const ajv = new Ajv2020({ strict: false, allErrors: true })
     addFormats(ajv)
     const validate = ajv.compile(schema)
-    const d = edit(twoClips(), (d) => { split(d, 4 * FLICKS, 'c3'); setAspect(d, '4:5'); setFit(d, 'c3', 'blur'); trim(d, 'c2', 'out', -FLICKS) })
+    const d = edit(twoClips(), (d) => {
+      split(d, 4 * FLICKS, 'c3'); setAspect(d, '4:5'); setFit(d, 'c3', 'blur'); trim(d, 'c2', 'out', -FLICKS)
+      removeRanges(d, 'c3', [[5 * FLICKS, 6 * FLICKS]], () => 'c4'); setGrade(d, 'c4', { exposure: 0.4, contrast: 1.1, saturation: 1.15 })
+    })
     expect(validate(d), JSON.stringify(validate.errors, null, 1)).toBe(true)
   })
 })

@@ -1,19 +1,20 @@
 import { FLICKS, FPS, clipAt, seq, totalDuration, type Doc, type Fit } from './model'
+import { gradeFilter } from './auto'
 
 // shortcut: Canvas 2D + <video> + MediaRecorder instead of the shared wgpu engine (architecture ADR-001);
 // preview/export parity and faster-than-real-time export arrive with the engine.
 
-export function drawFit(ctx: CanvasRenderingContext2D, v: HTMLVideoElement, W: number, H: number, fit: Fit) {
+export function drawFit(ctx: CanvasRenderingContext2D, v: HTMLVideoElement, W: number, H: number, fit: Fit, grade = '') {
   const vw = v.videoWidth, vh = v.videoHeight
   const draw = (k: number) => ctx.drawImage(v, (W - vw * k) / 2, (H - vh * k) / 2, vw * k, vh * k)
   const contain = Math.min(W / vw, H / vh), cover = Math.max(W / vw, H / vh)
-  if (fit === 'fill') return draw(cover)
   if (fit === 'blur') {
-    ctx.filter = `blur(${Math.round(H * 0.03)}px)` // radius relative to frame height: same look at any resolution
+    ctx.filter = `blur(${Math.round(H * 0.03)}px) ${grade}` // radius relative to frame height: same look at any resolution
     draw(cover)
-    ctx.filter = 'none'
   }
-  draw(contain)
+  ctx.filter = grade || 'none'
+  draw(fit === 'fill' ? cover : contain)
+  ctx.filter = 'none'
 }
 
 const once = (el: EventTarget, ev: string) => new Promise((r) => el.addEventListener(ev, r, { once: true }))
@@ -131,7 +132,11 @@ export class Player {
     ctx.fillRect(0, 0, W, H)
     const c = clipAt(d, Math.min(this.t, totalDuration(d) - 1))
     const v = c && this.media.get(c.assetId)
-    if (c && v?.videoWidth) drawFit(ctx, v, W, H, c.fit)
+    if (c && v?.videoWidth) drawFit(ctx, v, W, H, c.fit, c.grade?.enabled ? gradeFilter(c.grade.correction) : '')
+  }
+
+  url(id: string) {
+    return this.media.get(id)?.src
   }
 
   // shortcut: renders in real time and stalls if the tab is hidden; the engine export (D3) renders offline.
