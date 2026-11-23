@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "id": "p_new",
+  "name": "Untitled",
+  "createdAt": "2026-11-23T10:00:00Z",
+  "updatedAt": "2026-11-23T10:00:00Z",
+  "assets": {},
+  "sequences": {
+    "s1": {
+      "id": "s1",
+      "name": "Sequence 1",
+      "settings": {
+        "aspect": "9:16",
+        "width": 1080,
+        "height": 1920,
+        "fps": {
+          "num": 30000,
+          "den": 1001
+        },
+        "sampleRate": 48000
+      },
+      "trackOrder": [],
+      "tracks": {},
+      "items": {},
+      "transitions": {},
+      "markers": {}
+    }
+  },
+  "activeSequenceId": "s1",
+  "captionSets": {},
+  "cutSets": {}
+}

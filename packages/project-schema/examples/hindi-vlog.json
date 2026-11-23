@@ -1,0 +1,592 @@
+{
+  "schemaVersion": 1,
+  "id": "p_7Hq2LmZx",
+  "name": "Vlog — video editing tips",
+  "createdAt": "2026-11-23T10:00:00Z",
+  "updatedAt": "2026-11-23T10:42:00Z",
+  "assets": {
+    "a1": {
+      "id": "a1",
+      "kind": "video",
+      "name": "vlog_take1.mov",
+      "remoteId": "0b9f3c1e-6a52-4c39-9d0f-2f7a8d1c4e11",
+      "sizeBytes": 412000000,
+      "sha256": "9f2c000000000000000000000000000000000000000000000000000000000000",
+      "duration": 42336000000,
+      "video": {
+        "width": 1920,
+        "height": 1080,
+        "fps": {
+          "num": 30,
+          "den": 1
+        },
+        "rotation": 0,
+        "color": {
+          "primaries": "bt709",
+          "transfer": "bt709",
+          "matrix": "bt709",
+          "range": "limited"
+        }
+      },
+      "audio": {
+        "channels": 2,
+        "sampleRate": 48000
+      },
+      "logProfile": "applelog"
+    },
+    "lut1": {
+      "id": "lut1",
+      "kind": "lut",
+      "name": "warm-film.cube",
+      "remoteId": "5d1e7a20-0c3b-4f8e-a6b2-91c0d3e4f5a6",
+      "sizeBytes": 1048576
+    }
+  },
+  "sequences": {
+    "s_main": {
+      "id": "s_main",
+      "name": "Main 16:9",
+      "settings": {
+        "aspect": "16:9",
+        "width": 1920,
+        "height": 1080,
+        "fps": {
+          "num": 30,
+          "den": 1
+        },
+        "sampleRate": 48000,
+        "background": "#000000",
+        "look": {
+          "type": "mood",
+          "mood": "tealOrange",
+          "intensity": 0.6
+        }
+      },
+      "trackOrder": [
+        "t_cap",
+        "t_text",
+        "t_v1"
+      ],
+      "tracks": {
+        "t_cap": {
+          "id": "t_cap",
+          "kind": "caption",
+          "name": "Hindi captions",
+          "caption": {
+            "captionSetIds": [
+              "cs_hi"
+            ],
+            "style": {
+              "fontFamily": "Mukta",
+              "fontWeight": 700,
+              "size": 0.06,
+              "color": "#FFFFFF",
+              "outline": {
+                "width": 0.12,
+                "color": "#000000"
+              },
+              "animation": "karaoke",
+              "highlightColor": "#FFD400",
+              "position": {
+                "anchor": "bottom",
+                "margin": 0.08
+              },
+              "maxCharsPerLine": 32,
+              "maxLines": 2
+            }
+          }
+        },
+        "t_text": {
+          "id": "t_text",
+          "kind": "text",
+          "name": "Titles"
+        },
+        "t_v1": {
+          "id": "t_v1",
+          "kind": "video",
+          "name": "V1"
+        }
+      },
+      "items": {
+        "c1": {
+          "id": "c1",
+          "type": "clip",
+          "trackId": "t_v1",
+          "assetId": "a1",
+          "start": 0,
+          "duration": 2822400000,
+          "sourceIn": 0,
+          "fit": "fill",
+          "origin": {
+            "cutSetId": "cut_sil"
+          },
+          "grade": {
+            "enabled": true,
+            "input": "auto",
+            "correction": {
+              "exposure": 0.35,
+              "temperatureK": 5600,
+              "tint": 0.02,
+              "contrast": 1.1,
+              "saturation": 1.05
+            },
+            "source": "auto",
+            "autoBaseline": {
+              "exposure": 0.35,
+              "temperatureK": 5600,
+              "tint": 0.02,
+              "contrast": 1.1,
+              "saturation": 1.05
+            },
+            "analysisVersion": "ag-1",
+            "look": null,
+            "skinProtect": {
+              "enabled": true,
+              "amount": 0.7
+            }
+          },
+          "audio": {
+            "gainDb": 0,
+            "fadeOut": 7056000
+          }
+        },
+        "c2": {
+          "id": "c2",
+          "type": "clip",
+          "trackId": "t_v1",
+          "assetId": "a1",
+          "start": 2822400000,
+          "duration": 4233600000,
+          "sourceIn": 3669120000,
+          "fit": "fill",
+          "transform": {
+            "scale": 1.08
+          },
+          "origin": {
+            "cutSetId": "cut_sil"
+          },
+          "grade": {
+            "enabled": true,
+            "input": "auto",
+            "correction": {
+              "exposure": 0.1,
+              "temperatureK": 5600,
+              "tint": 0.02,
+              "contrast": 1.1,
+              "saturation": 1.05
+            },
+            "source": "match",
+            "matchReferenceItemId": "c1",
+            "look": {
+              "type": "lut",
+              "lutAssetId": "lut1",
+              "intensity": 0.5
+            },
+            "skinProtect": {
+              "enabled": true,
+              "amount": 0.7
+            }
+          },
+          "audio": {
+            "fadeIn": 7056000
+          }
+        },
+        "title": {
+          "id": "title",
+          "type": "text",
+          "trackId": "t_text",
+          "start": 0,
+          "duration": 1411200000,
+          "text": "आज की बात: एडिटिंग",
+          "style": {
+            "fontFamily": "Mukta",
+            "fontWeight": 800,
+            "size": 0.09,
+            "color": "#FFFFFF",
+            "shadow": {
+              "x": 0.02,
+              "y": 0.02,
+              "blur": 0.05,
+              "color": "#00000099"
+            }
+          },
+          "transform": {
+            "y": {
+              "keyframes": [
+                {
+                  "t": 0,
+                  "v": -0.3,
+                  "ease": "easeOut"
+                },
+                {
+                  "t": 352800000,
+                  "v": -0.35
+                }
+              ]
+            },
+            "opacity": {
+              "keyframes": [
+                {
+                  "t": 0,
+                  "v": 0
+                },
+                {
+                  "t": 211680000,
+                  "v": 1,
+                  "ease": "bezier",
+                  "bezier": [
+                    0.2,
+                    0,
+                    0,
+                    1
+                  ]
+                }
+              ]
+            }
+          },
+          "animIn": "pop",
+          "animOut": "fade"
+        }
+      },
+      "transitions": {
+        "tr1": {
+          "id": "tr1",
+          "type": "fade",
+          "fromItemId": "c1",
+          "toItemId": "c2",
+          "duration": 141120000
+        }
+      },
+      "markers": {
+        "m1": {
+          "id": "m1",
+          "at": 1411200000,
+          "label": "hook ends",
+          "color": "#FF4D4F"
+        }
+      }
+    },
+    "s_reel1": {
+      "id": "s_reel1",
+      "name": "Reel 1",
+      "stylePreset": "reel",
+      "settings": {
+        "aspect": "9:16",
+        "width": 1080,
+        "height": 1920,
+        "fps": {
+          "num": 30,
+          "den": 1
+        },
+        "sampleRate": 48000
+      },
+      "trackOrder": [
+        "r_cap",
+        "r_v1"
+      ],
+      "tracks": {
+        "r_cap": {
+          "id": "r_cap",
+          "kind": "caption",
+          "name": "Captions",
+          "caption": {
+            "captionSetIds": [
+              "cs_hi"
+            ],
+            "style": {
+              "fontFamily": "Mukta",
+              "fontWeight": 700,
+              "size": 0.045,
+              "color": "#FFFFFF",
+              "outline": {
+                "width": 0.12,
+                "color": "#000000"
+              },
+              "animation": "pop",
+              "highlightColor": "#FFD400",
+              "position": {
+                "anchor": "bottom",
+                "margin": 0.08
+              },
+              "maxCharsPerLine": 20,
+              "maxLines": 2,
+              "safeArea": "reels",
+              "box": {
+                "color": "#000000AA",
+                "padding": 0.25,
+                "radius": 0.3
+              }
+            }
+          }
+        },
+        "r_v1": {
+          "id": "r_v1",
+          "kind": "video",
+          "name": "V1"
+        }
+      },
+      "items": {
+        "r1": {
+          "id": "r1",
+          "type": "clip",
+          "trackId": "r_v1",
+          "assetId": "a1",
+          "start": 0,
+          "duration": 2822400000,
+          "sourceIn": 0,
+          "fit": "fill",
+          "reframe": {
+            "9:16": {
+              "mode": "auto",
+              "jobId": "a3c5e7f9-1b2d-4e6f-8a0c-2e4f6a8c0e1b",
+              "keyframes": [
+                {
+                  "t": 0,
+                  "cx": 0.52,
+                  "cy": 0.4,
+                  "zoom": 1
+                },
+                {
+                  "t": 2116800000,
+                  "cx": 0.48,
+                  "cy": 0.42,
+                  "zoom": 1.05,
+                  "ease": "easeInOut"
+                }
+              ]
+            }
+          }
+        },
+        "r2": {
+          "id": "r2",
+          "type": "clip",
+          "trackId": "r_v1",
+          "assetId": "a1",
+          "start": 2822400000,
+          "duration": 2822400000,
+          "sourceIn": 3669120000,
+          "fit": "fill",
+          "speed": {
+            "keyframes": [
+              {
+                "t": 0,
+                "v": 1
+              },
+              {
+                "t": 1411200000,
+                "v": 1.5,
+                "ease": "easeInOut"
+              }
+            ]
+          },
+          "reframe": {
+            "9:16": {
+              "mode": "manual",
+              "keyframes": [
+                {
+                  "t": 3669120000,
+                  "cx": 0.5,
+                  "cy": 0.4,
+                  "zoom": 1.1
+                }
+              ]
+            }
+          }
+        }
+      },
+      "transitions": {},
+      "markers": {}
+    }
+  },
+  "activeSequenceId": "s_main",
+  "captionSets": {
+    "cs_hi": {
+      "id": "cs_hi",
+      "anchor": {
+        "assetId": "a1"
+      },
+      "language": "hi",
+      "script": "Deva",
+      "kind": "transcript",
+      "transcriptId": "7e1d2c3b-4a59-4687-b9a0-c1d2e3f4a5b6",
+      "speakers": {
+        "sp1": {
+          "name": "Host",
+          "color": "#4DA3FF"
+        }
+      },
+      "segments": {
+        "g1": {
+          "id": "g1",
+          "start": 352800000,
+          "end": 2540160000,
+          "speakerId": "sp1",
+          "text": "नमस्ते दोस्तों, आज हम बात करेंगे",
+          "words": [
+            {
+              "text": "नमस्ते",
+              "start": 352800000,
+              "end": 705600000
+            },
+            {
+              "text": "दोस्तों,",
+              "start": 705600000,
+              "end": 1270080000
+            },
+            {
+              "text": "आज",
+              "start": 1411200000,
+              "end": 1693440000
+            },
+            {
+              "text": "हम",
+              "start": 1693440000,
+              "end": 1834560000
+            },
+            {
+              "text": "बात",
+              "start": 1834560000,
+              "end": 2116800000
+            },
+            {
+              "text": "करेंगे",
+              "start": 2116800000,
+              "end": 2540160000
+            }
+          ]
+        },
+        "g2": {
+          "id": "g2",
+          "start": 3810240000,
+          "end": 6350400000,
+          "speakerId": "sp1",
+          "text": "वीडियो एडिटिंग के बारे में",
+          "words": [
+            {
+              "text": "वीडियो",
+              "start": 3810240000,
+              "end": 4233600000
+            },
+            {
+              "text": "एडिटिंग",
+              "start": 4233600000,
+              "end": 4939200000
+            },
+            {
+              "text": "के",
+              "start": 4939200000,
+              "end": 5150880000
+            },
+            {
+              "text": "बारे",
+              "start": 5150880000,
+              "end": 5362560000
+            },
+            {
+              "text": "में",
+              "start": 5362560000,
+              "end": 5644800000
+            }
+          ]
+        }
+      }
+    },
+    "cs_latn": {
+      "id": "cs_latn",
+      "anchor": {
+        "assetId": "a1"
+      },
+      "language": "hi-Latn",
+      "script": "Latn",
+      "kind": "transliteration",
+      "derivedFrom": "cs_hi",
+      "segments": {
+        "g1": {
+          "id": "g1",
+          "start": 352800000,
+          "end": 2540160000,
+          "text": "namaste doston, aaj hum baat karenge",
+          "wordsEstimated": true
+        },
+        "g2": {
+          "id": "g2",
+          "start": 3810240000,
+          "end": 6350400000,
+          "text": "video editing ke baare mein",
+          "wordsEstimated": true
+        }
+      }
+    }
+  },
+  "cutSets": {
+    "cut_sil": {
+      "id": "cut_sil",
+      "kind": "silence",
+      "assetId": "a1",
+      "createdAt": "2026-11-23T10:30:00Z",
+      "appliedAt": "2026-11-23T10:31:00Z",
+      "params": {
+        "mode": "remove",
+        "thresholdDb": -40,
+        "minSilence": 352800000,
+        "padBefore": 56448000,
+        "padAfter": 70560000,
+        "keepPausesUnder": 176400000,
+        "smoothing": {
+          "audioCrossfade": 7056000,
+          "punchIn": {
+            "enabled": true,
+            "scale": 1.08
+          }
+        }
+      },
+      "regions": {
+        "r1": {
+          "id": "r1",
+          "start": 2822400000,
+          "end": 3669120000,
+          "reason": "silence",
+          "status": "accepted"
+        },
+        "r2": {
+          "id": "r2",
+          "start": 8467200000,
+          "end": 9243360000,
+          "reason": "silence",
+          "status": "rejected"
+        }
+      }
+    },
+    "cut_fill": {
+      "id": "cut_fill",
+      "kind": "filler",
+      "assetId": "a1",
+      "createdAt": "2026-11-23T10:35:00Z",
+      "params": {
+        "mode": "mark",
+        "thresholdDb": -40,
+        "minSilence": 211680000,
+        "padBefore": 21168000,
+        "padAfter": 21168000,
+        "fillers": [
+          "um",
+          "uh",
+          "matlab",
+          "basically",
+          "तो",
+          "मतलब"
+        ]
+      },
+      "regions": {
+        "f1": {
+          "id": "f1",
+          "start": 6703200000,
+          "end": 6985440000,
+          "reason": "filler",
+          "word": "मतलब",
+          "status": "pending"
+        }
+      }
+    }
+  }
+}

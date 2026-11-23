@@ -1,0 +1,509 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://schemas.cutforge.app/project/v1.json",
+  "title": "CutForge Project",
+  "description": "Non-destructive project document (EDL). Times are integer flicks (705600000 per second). Collections are maps keyed by id so JSON-Patch paths stay stable. Referential integrity, no-overlap-per-track and transition adjacency are checked by the semantic validator, not by this schema.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "name", "createdAt", "updatedAt", "assets", "sequences", "activeSequenceId", "captionSets", "cutSets"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "id": { "$ref": "#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "updatedAt": { "type": "string", "format": "date-time" },
+    "assets": { "$ref": "#/$defs/mapOf/asset" },
+    "sequences": { "type": "object", "minProperties": 1, "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/sequence" } },
+    "activeSequenceId": { "$ref": "#/$defs/id" },
+    "captionSets": { "$ref": "#/$defs/mapOf/captionSet" },
+    "cutSets": { "$ref": "#/$defs/mapOf/cutSet" }
+  },
+
+  "$defs": {
+    "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+    "flicks": { "type": "integer", "minimum": 0, "maximum": 9007199254740991 },
+    "positiveFlicks": { "type": "integer", "minimum": 1, "maximum": 9007199254740991 },
+    "rational": {
+      "type": "object", "additionalProperties": false, "required": ["num", "den"],
+      "properties": { "num": { "type": "integer", "minimum": 1 }, "den": { "type": "integer", "minimum": 1 } }
+    },
+    "color": { "type": "string", "pattern": "^#[0-9A-Fa-f]{6}([0-9A-Fa-f]{2})?$" },
+    "unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "aspectKey": { "type": "string", "pattern": "^(16:9|9:16|1:1|4:5|21:9|[1-9][0-9]{1,3}x[1-9][0-9]{1,3})$" },
+
+    "mapOf": {
+      "asset":      { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/asset" } },
+      "captionSet": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/captionSet" } },
+      "cutSet":     { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/cutSet" } }
+    },
+
+    "keyframe": {
+      "type": "object", "additionalProperties": false, "required": ["t", "v"],
+      "properties": {
+        "t": { "$ref": "#/$defs/flicks", "description": "Relative to item start (timeline flicks)." },
+        "v": { "type": "number" },
+        "ease": { "enum": ["linear", "hold", "easeIn", "easeOut", "easeInOut", "bezier"], "default": "linear" },
+        "bezier": { "type": "array", "items": { "type": "number" }, "minItems": 4, "maxItems": 4 }
+      },
+      "if": { "properties": { "ease": { "const": "bezier" } }, "required": ["ease"] },
+      "then": { "required": ["bezier"] }
+    },
+    "animNumber": {
+      "oneOf": [
+        { "type": "number" },
+        { "type": "object", "additionalProperties": false, "required": ["keyframes"],
+          "properties": { "keyframes": { "type": "array", "minItems": 1, "items": { "$ref": "#/$defs/keyframe" } } } }
+      ]
+    },
+    "transform": {
+      "type": "object", "additionalProperties": false,
+      "description": "Resolution-independent. x/y: offset in frame heights from centre; scale: 1 = per fit mode; rotation: degrees.",
+      "properties": {
+        "x": { "$ref": "#/$defs/animNumber" },
+        "y": { "$ref": "#/$defs/animNumber" },
+        "scale": { "$ref": "#/$defs/animNumber" },
+        "rotation": { "$ref": "#/$defs/animNumber" },
+        "opacity": { "$ref": "#/$defs/animNumber" }
+      }
+    },
+    "crop": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "left": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "top": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "right": { "type": "number", "minimum": 0, "maximum": 0.49 },
+        "bottom": { "type": "number", "minimum": 0, "maximum": 0.49 }
+      }
+    },
+
+    "asset": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "name", "sizeBytes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["video", "audio", "image", "lut"] },
+        "name": { "type": "string", "maxLength": 255 },
+        "remoteId": { "type": "string", "format": "uuid", "description": "Server asset id once uploaded." },
+        "localRef": { "type": "string", "maxLength": 1024, "description": "OPFS path (web) or opaque path token (desktop). Never sent to the server." },
+        "sizeBytes": { "type": "integer", "minimum": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "duration": { "$ref": "#/$defs/positiveFlicks" },
+        "video": {
+          "type": "object", "additionalProperties": false, "required": ["width", "height", "fps", "rotation", "color"],
+          "properties": {
+            "width": { "type": "integer", "minimum": 16, "maximum": 16384 },
+            "height": { "type": "integer", "minimum": 16, "maximum": 16384 },
+            "fps": { "$ref": "#/$defs/rational" },
+            "rotation": { "enum": [0, 90, 180, 270] },
+            "color": {
+              "type": "object", "additionalProperties": false, "required": ["primaries", "transfer", "matrix", "range"],
+              "properties": {
+                "primaries": { "enum": ["bt709", "bt601", "bt2020", "p3"] },
+                "transfer": { "enum": ["bt709", "srgb", "pq", "hlg", "linear", "unknown"] },
+                "matrix": { "enum": ["bt709", "bt601", "bt2020nc", "rgb"] },
+                "range": { "enum": ["limited", "full"] }
+              }
+            }
+          }
+        },
+        "audio": {
+          "type": "object", "additionalProperties": false, "required": ["channels", "sampleRate"],
+          "properties": {
+            "channels": { "type": "integer", "minimum": 1, "maximum": 8 },
+            "sampleRate": { "type": "integer", "minimum": 8000, "maximum": 192000 }
+          }
+        },
+        "logProfile": { "enum": ["none", "slog3", "applelog", "dlogm", "vlog", "unknown"], "description": "Detected at ingest; used when grade.input is 'auto'." }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "video" } } }, "then": { "required": ["duration", "video"] } },
+        { "if": { "properties": { "kind": { "const": "audio" } } }, "then": { "required": ["duration", "audio"] } },
+        { "if": { "properties": { "kind": { "const": "image" } } }, "then": { "required": ["video"] } }
+      ]
+    },
+
+    "sequence": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "name", "settings", "trackOrder", "tracks", "items", "transitions", "markers"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "settings": {
+          "type": "object", "additionalProperties": false,
+          "required": ["aspect", "width", "height", "fps", "sampleRate"],
+          "properties": {
+            "aspect": { "enum": ["16:9", "9:16", "1:1", "4:5", "21:9", "custom"] },
+            "width": { "type": "integer", "minimum": 16, "maximum": 8192, "multipleOf": 2 },
+            "height": { "type": "integer", "minimum": 16, "maximum": 8192, "multipleOf": 2 },
+            "fps": { "$ref": "#/$defs/rational" },
+            "sampleRate": { "const": 48000 },
+            "background": { "$ref": "#/$defs/color" },
+            "look": { "$ref": "#/$defs/look", "description": "Timeline-wide look; a clip's grade.look overrides it." }
+          }
+        },
+        "trackOrder": {
+          "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" },
+          "description": "Top-to-bottom as shown in the UI. Compositing draws the last entry first (bottom layer)."
+        },
+        "tracks": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/track" } },
+        "items": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/item" } },
+        "transitions": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/transition" } },
+        "markers": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/marker" } },
+        "stylePreset": { "enum": ["reel", "cinematic", "vlog", "podcast", "news"], "description": "Last applied preset, informational only; presets write ordinary fields." }
+      }
+    },
+
+    "track": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "name"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["video", "audio", "text", "overlay", "caption"] },
+        "name": { "type": "string", "maxLength": 100 },
+        "locked": { "type": "boolean", "default": false },
+        "muted": { "type": "boolean", "default": false },
+        "hidden": { "type": "boolean", "default": false },
+        "caption": {
+          "type": "object", "additionalProperties": false, "required": ["captionSetIds", "style"],
+          "properties": {
+            "captionSetIds": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/id" } },
+            "style": { "$ref": "#/$defs/captionStyle" }
+          }
+        }
+      },
+      "if": { "properties": { "kind": { "const": "caption" } } },
+      "then": { "required": ["caption"] },
+      "else": { "not": { "required": ["caption"] } }
+    },
+
+    "item": {
+      "oneOf": [{ "$ref": "#/$defs/clip" }, { "$ref": "#/$defs/textItem" }]
+    },
+
+    "clip": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "trackId", "assetId", "start", "duration", "sourceIn"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "clip" },
+        "trackId": { "$ref": "#/$defs/id" },
+        "assetId": { "$ref": "#/$defs/id" },
+        "start": { "$ref": "#/$defs/flicks", "description": "Timeline position." },
+        "duration": { "$ref": "#/$defs/positiveFlicks", "description": "Timeline duration; the source range follows from speed." },
+        "sourceIn": { "$ref": "#/$defs/flicks" },
+        "speed": {
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["rate"],
+              "properties": { "rate": { "type": "number", "minimum": 0.1, "maximum": 16 } } },
+            { "type": "object", "additionalProperties": false, "required": ["keyframes"],
+              "properties": { "keyframes": { "type": "array", "minItems": 2, "items": { "$ref": "#/$defs/keyframe" } } },
+              "description": "Speed ramp: v = playback rate (0.1..16) over timeline time." }
+          ]
+        },
+        "reverse": { "type": "boolean", "default": false },
+        "enabled": { "type": "boolean", "default": true },
+        "fit": { "enum": ["fit", "fill", "blur"], "default": "fit" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "crop": { "$ref": "#/$defs/crop" },
+        "reframe": {
+          "type": "object", "propertyNames": { "$ref": "#/$defs/aspectKey" },
+          "additionalProperties": { "$ref": "#/$defs/reframe" },
+          "description": "Per output aspect, so switching ratio and back keeps each framing."
+        },
+        "grade": { "$ref": "#/$defs/grade" },
+        "effects": { "type": "array", "maxItems": 16, "items": { "$ref": "#/$defs/effect" } },
+        "audio": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "gainDb": { "type": "number", "minimum": -60, "maximum": 24 },
+            "muted": { "type": "boolean" },
+            "fadeIn": { "$ref": "#/$defs/flicks" },
+            "fadeOut": { "$ref": "#/$defs/flicks" }
+          }
+        },
+        "showCaptions": { "type": "boolean", "default": true, "description": "Render source-anchored captions of this asset where this clip is visible." },
+        "origin": {
+          "type": "object", "additionalProperties": false,
+          "properties": {
+            "cutSetId": { "$ref": "#/$defs/id" },
+            "highlightJobId": { "type": "string", "format": "uuid" }
+          }
+        }
+      }
+    },
+
+    "textItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "trackId", "start", "duration", "text", "style"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "const": "text" },
+        "trackId": { "$ref": "#/$defs/id" },
+        "start": { "$ref": "#/$defs/flicks" },
+        "duration": { "$ref": "#/$defs/positiveFlicks" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 2000 },
+        "style": { "$ref": "#/$defs/textStyle" },
+        "transform": { "$ref": "#/$defs/transform" },
+        "animIn": { "enum": ["none", "fade", "pop", "slideUp", "typewriter"], "default": "none" },
+        "animOut": { "enum": ["none", "fade", "pop", "slideDown"], "default": "none" }
+      }
+    },
+
+    "reframe": {
+      "type": "object", "additionalProperties": false, "required": ["mode"],
+      "properties": {
+        "mode": { "enum": ["auto", "manual", "off"] },
+        "keyframes": {
+          "type": "array",
+          "description": "In SOURCE time (they follow the content through trims and cuts). cx/cy: crop centre in the source frame (0..1); zoom >= 1.",
+          "items": {
+            "type": "object", "additionalProperties": false, "required": ["t", "cx", "cy", "zoom"],
+            "properties": {
+              "t": { "$ref": "#/$defs/flicks" },
+              "cx": { "$ref": "#/$defs/unit" },
+              "cy": { "$ref": "#/$defs/unit" },
+              "zoom": { "type": "number", "minimum": 1, "maximum": 8 },
+              "ease": { "enum": ["linear", "hold", "easeInOut"] }
+            }
+          }
+        },
+        "jobId": { "type": "string", "format": "uuid" }
+      }
+    },
+
+    "gradeCorrection": {
+      "type": "object", "additionalProperties": false,
+      "properties": {
+        "exposure": { "type": "number", "minimum": -5, "maximum": 5, "description": "Stops." },
+        "temperatureK": { "type": "number", "minimum": 1500, "maximum": 15000, "description": "Estimated as-shot illuminant, neutralised to D65. 6504 = no change." },
+        "tint": { "type": "number", "minimum": -1, "maximum": 1 },
+        "contrast": { "type": "number", "minimum": 0.25, "maximum": 4, "description": "Multiplier around 18% grey in log space. 1 = no change." },
+        "highlights": { "type": "number", "minimum": -1, "maximum": 1 },
+        "shadows": { "type": "number", "minimum": -1, "maximum": 1 },
+        "whites": { "type": "number", "minimum": -1, "maximum": 1 },
+        "blacks": { "type": "number", "minimum": -1, "maximum": 1 },
+        "saturation": { "type": "number", "minimum": 0, "maximum": 3 },
+        "vibrance": { "type": "number", "minimum": -1, "maximum": 1 }
+      }
+    },
+    "look": {
+      "type": "object", "additionalProperties": false, "required": ["type", "intensity"],
+      "properties": {
+        "type": { "enum": ["none", "mood", "lut"] },
+        "mood": { "enum": ["warm", "tealOrange", "moody", "brightVlog", "blackWhite"] },
+        "lutAssetId": { "$ref": "#/$defs/id" },
+        "intensity": { "$ref": "#/$defs/unit" }
+      },
+      "allOf": [
+        { "if": { "properties": { "type": { "const": "mood" } } }, "then": { "required": ["mood"] } },
+        { "if": { "properties": { "type": { "const": "lut" } } }, "then": { "required": ["lutAssetId"] } }
+      ]
+    },
+    "grade": {
+      "type": "object", "additionalProperties": false, "required": ["enabled"],
+      "description": "Always parametric; the engine bakes it into a 3D LUT at render time. Never baked into media.",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "input": { "enum": ["auto", "none", "slog3", "applelog", "dlogm", "vlog", "hlg", "pq"], "default": "auto" },
+        "correction": { "$ref": "#/$defs/gradeCorrection" },
+        "source": { "enum": ["none", "auto", "match", "manual"], "description": "What produced the correction values (manual = user moved a slider after)." },
+        "autoBaseline": { "$ref": "#/$defs/gradeCorrection", "description": "Values from the last Auto Grade/Match, for 'reset to auto'." },
+        "analysisVersion": { "type": "string", "maxLength": 40 },
+        "matchReferenceItemId": { "$ref": "#/$defs/id" },
+        "look": { "oneOf": [{ "type": "null" }, { "$ref": "#/$defs/look" }], "description": "null = inherit the sequence look." },
+        "skinProtect": {
+          "type": "object", "additionalProperties": false, "required": ["enabled", "amount"],
+          "properties": { "enabled": { "type": "boolean" }, "amount": { "$ref": "#/$defs/unit" } }
+        }
+      }
+    },
+    "effect": {
+      "type": "object", "additionalProperties": false, "required": ["id", "type", "amount"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["vignette", "blur", "sharpen", "grain"] },
+        "enabled": { "type": "boolean", "default": true },
+        "amount": { "$ref": "#/$defs/animNumber" }
+      }
+    },
+
+    "transition": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "type", "fromItemId", "toItemId", "duration"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "type": { "enum": ["fade", "dipToBlack", "slide", "zoom", "wipe"] },
+        "fromItemId": { "$ref": "#/$defs/id" },
+        "toItemId": { "$ref": "#/$defs/id" },
+        "duration": { "$ref": "#/$defs/positiveFlicks", "description": "Centred on the cut; needs source handles on both sides." },
+        "direction": { "enum": ["left", "right", "up", "down"] },
+        "audioCrossfade": { "type": "boolean", "default": true }
+      }
+    },
+    "marker": {
+      "type": "object", "additionalProperties": false, "required": ["id", "at"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "at": { "$ref": "#/$defs/flicks" },
+        "label": { "type": "string", "maxLength": 200 },
+        "color": { "$ref": "#/$defs/color" }
+      }
+    },
+
+    "textStyle": { "$ref": "#/$defs/textStyleBase", "unevaluatedProperties": false },
+    "textStyleBase": {
+      "$comment": "Open (no property lock) so captionStyle can extend it; textStyle and captionStyle each add the lock.",
+      "type": "object",
+      "required": ["fontFamily", "size", "color"],
+      "properties": {
+        "fontFamily": { "enum": ["Noto Sans Devanagari", "Mukta", "Poppins"], "description": "Bundled fonts only, so shaping is identical on every target." },
+        "fontWeight": { "type": "integer", "minimum": 100, "maximum": 900, "multipleOf": 100, "default": 600 },
+        "size": { "type": "number", "minimum": 0.01, "maximum": 0.5, "description": "Fraction of output height." },
+        "color": { "$ref": "#/$defs/color" },
+        "outline": {
+          "type": "object", "additionalProperties": false, "required": ["width", "color"],
+          "properties": { "width": { "type": "number", "minimum": 0, "maximum": 0.5, "description": "Fraction of font size." }, "color": { "$ref": "#/$defs/color" } }
+        },
+        "shadow": {
+          "type": "object", "additionalProperties": false, "required": ["x", "y", "blur", "color"],
+          "properties": {
+            "x": { "type": "number", "minimum": -0.5, "maximum": 0.5 },
+            "y": { "type": "number", "minimum": -0.5, "maximum": 0.5 },
+            "blur": { "type": "number", "minimum": 0, "maximum": 0.5 },
+            "color": { "$ref": "#/$defs/color" }
+          }
+        },
+        "box": {
+          "type": "object", "additionalProperties": false, "required": ["color"],
+          "properties": {
+            "color": { "$ref": "#/$defs/color" },
+            "padding": { "type": "number", "minimum": 0, "maximum": 1 },
+            "radius": { "type": "number", "minimum": 0, "maximum": 1 }
+          }
+        },
+        "align": { "enum": ["left", "center", "right"], "default": "center" },
+        "lineHeight": { "type": "number", "minimum": 1, "maximum": 3, "default": 1.5 }
+      }
+    },
+    "captionStyle": {
+      "$ref": "#/$defs/textStyleBase",
+      "type": "object",
+      "required": ["animation", "position"],
+      "properties": {
+        "animation": { "enum": ["none", "karaoke", "pop", "wordByWord"] },
+        "highlightColor": { "$ref": "#/$defs/color" },
+        "position": {
+          "type": "object", "additionalProperties": false, "required": ["anchor", "margin"],
+          "properties": { "anchor": { "enum": ["top", "middle", "bottom"] }, "margin": { "type": "number", "minimum": 0, "maximum": 0.5 } }
+        },
+        "safeArea": { "enum": ["none", "reels", "shorts", "youtube"], "default": "none" },
+        "maxCharsPerLine": { "type": "integer", "minimum": 8, "maximum": 80, "default": 32 },
+        "maxLines": { "type": "integer", "minimum": 1, "maximum": 3, "default": 2 },
+        "englishInLatin": { "type": "boolean", "default": false, "description": "For mixed tracks: show English words in Latin script inside Devanagari lines." }
+      },
+      "unevaluatedProperties": false
+    },
+
+    "word": {
+      "type": "object", "additionalProperties": false, "required": ["text", "start", "end"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "start": { "$ref": "#/$defs/flicks" },
+        "end": { "$ref": "#/$defs/flicks" },
+        "conf": { "$ref": "#/$defs/unit" }
+      }
+    },
+    "captionSegment": {
+      "type": "object", "additionalProperties": false, "required": ["id", "start", "end", "text"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "start": { "$ref": "#/$defs/flicks" },
+        "end": { "$ref": "#/$defs/positiveFlicks" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "words": { "type": "array", "maxItems": 200, "items": { "$ref": "#/$defs/word" } },
+        "wordsEstimated": { "type": "boolean", "default": false, "description": "True for translations: word times spread proportionally, not aligned." },
+        "speakerId": { "$ref": "#/$defs/id" }
+      }
+    },
+    "captionSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "anchor", "language", "script", "kind", "segments"],
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "anchor": {
+          "description": "asset: segment times are SOURCE time of that asset (re-sync automatically). sequence: timeline time (free captions).",
+          "oneOf": [
+            { "type": "object", "additionalProperties": false, "required": ["assetId"], "properties": { "assetId": { "$ref": "#/$defs/id" } } },
+            { "type": "object", "additionalProperties": false, "required": ["sequenceId"], "properties": { "sequenceId": { "$ref": "#/$defs/id" } } }
+          ]
+        },
+        "language": { "enum": ["hi", "en", "hi-Latn", "mixed"] },
+        "script": { "enum": ["Deva", "Latn"] },
+        "kind": { "enum": ["transcript", "translation", "transliteration", "manual"] },
+        "derivedFrom": { "$ref": "#/$defs/id" },
+        "transcriptId": { "type": "string", "format": "uuid" },
+        "speakers": {
+          "type": "object", "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["name"],
+            "properties": { "name": { "type": "string", "maxLength": 60 }, "color": { "$ref": "#/$defs/color" } }
+          }
+        },
+        "segments": { "type": "object", "propertyNames": { "$ref": "#/$defs/id" }, "additionalProperties": { "$ref": "#/$defs/captionSegment" } }
+      }
+    },
+
+    "cutSet": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "kind", "assetId", "params", "regions", "createdAt"],
+      "description": "Silence/filler analysis kept for review. Regions are SOURCE time. Applying them is a separate undoable command that splits clips.",
+      "properties": {
+        "id": { "$ref": "#/$defs/id" },
+        "kind": { "enum": ["silence", "filler"] },
+        "assetId": { "$ref": "#/$defs/id" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "appliedAt": { "type": "string", "format": "date-time" },
+        "params": {
+          "type": "object", "additionalProperties": false,
+          "required": ["mode", "thresholdDb", "minSilence", "padBefore", "padAfter"],
+          "properties": {
+            "mode": { "enum": ["remove", "shorten", "mark"] },
+            "thresholdDb": { "type": "number", "minimum": -80, "maximum": 0 },
+            "minSilence": { "$ref": "#/$defs/positiveFlicks" },
+            "padBefore": { "$ref": "#/$defs/flicks" },
+            "padAfter": { "$ref": "#/$defs/flicks" },
+            "keepPausesUnder": { "$ref": "#/$defs/flicks" },
+            "shortenTo": { "$ref": "#/$defs/flicks" },
+            "fillers": { "type": "array", "maxItems": 200, "uniqueItems": true, "items": { "type": "string", "minLength": 1, "maxLength": 40 } },
+            "smoothing": {
+              "type": "object", "additionalProperties": false,
+              "properties": {
+                "audioCrossfade": { "$ref": "#/$defs/flicks" },
+                "punchIn": {
+                  "type": "object", "additionalProperties": false, "required": ["enabled", "scale"],
+                  "properties": { "enabled": { "type": "boolean" }, "scale": { "type": "number", "minimum": 1, "maximum": 1.25 } }
+                }
+              }
+            }
+          },
+          "if": { "properties": { "mode": { "const": "shorten" } } },
+          "then": { "required": ["shortenTo"] }
+        },
+        "regions": {
+          "type": "object", "propertyNames": { "$ref": "#/$defs/id" },
+          "additionalProperties": {
+            "type": "object", "additionalProperties": false, "required": ["id", "start", "end", "reason", "status"],
+            "properties": {
+              "id": { "$ref": "#/$defs/id" },
+              "start": { "$ref": "#/$defs/flicks" },
+              "end": { "$ref": "#/$defs/positiveFlicks" },
+              "reason": { "enum": ["silence", "filler"] },
+              "word": { "type": "string", "maxLength": 40 },
+              "status": { "enum": ["pending", "accepted", "rejected"] }
+            }
+          }
+        }
+      }
+    }
+  }
+}

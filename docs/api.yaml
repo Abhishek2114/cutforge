@@ -1,0 +1,1187 @@
+openapi: 3.1.0
+info:
+  title: CutForge API
+  version: 0.1.0
+  description: |
+    REST API for CutForge. Conventions:
+    - Auth: `Authorization: Bearer <JWT>` (15 min). Refresh token in an httpOnly cookie (web) or OS keychain (desktop).
+    - Errors: RFC 9457 `application/problem+json` with a stable `code`.
+    - Lists: cursor pagination (`cursor`, `limit` ≤ 100) → `{items, nextCursor}`.
+    - POSTs that create things accept `Idempotency-Key`.
+    - Rate limits: `429` with `Retry-After`; per-user token buckets per route class.
+    - Times inside media are integer flicks (705,600,000 / s).
+    - Uploads use the tus 1.0 protocol at `{TUS_BASE}/files/` (tusd, not this API). Create the asset first, then
+      upload with tus metadata `assetId`; tusd hooks call `/internal/tus-hooks`.
+    - Project documents follow `packages/project-schema/project.schema.json`; the server validates every write.
+servers:
+  - url: https://api.cutforge.app
+security:
+  - bearer: []
+
+tags:
+  - name: auth
+  - name: me
+  - name: assets
+  - name: projects
+  - name: jobs
+  - name: transcripts
+  - name: library
+  - name: dictionary
+  - name: billing
+  - name: events
+  - name: ops
+
+paths:
+  # ───────────── Auth ─────────────
+  /v1/auth/otp/request:
+    post:
+      tags: [auth]
+      security: []
+      summary: Send a 6-digit OTP by SMS (DLT-registered template)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone: { type: string, pattern: '^\+[1-9][0-9]{7,14}$' }
+      responses:
+        '202': { description: Sent (also returned for unknown numbers, to avoid enumeration) }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/auth/otp/verify:
+    post:
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone, code]
+              properties:
+                phone: { type: string }
+                code: { type: string, pattern: '^[0-9]{6}$' }
+                deviceLabel: { type: string, maxLength: 60 }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '429': { $ref: '#/components/responses/RateLimited' }
+
+  /v1/auth/google:
+    post:
+      tags: [auth]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [idToken]
+              properties:
+                idToken: { type: string }
+                deviceLabel: { type: string, maxLength: 60 }
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /v1/auth/refresh:
+    post:
+      tags: [auth]
+      security: []
+      summary: Rotate the refresh token; reuse of an old token revokes the whole family
+      responses:
+        '200': { $ref: '#/components/responses/Session' }
+        '401': { $ref: '#/components/responses/Problem' }
+
+  /v1/auth/logout:
+    post:
+      tags: [auth]
+      responses:
+        '204': { description: Refresh token revoked }
+
+  # ───────────── Me ─────────────
+  /v1/me:
+    get:
+      tags: [me]
+      responses:
+        '200':
+          description: Current user
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+    patch:
+      tags: [me]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName: { type: string, maxLength: 100 }
+                uiLocale: { enum: [hi, en] }
+                birthYear: { type: integer, minimum: 1900, maximum: 2100 }
+      responses:
+        '200':
+          description: Updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/User' } } }
+    delete:
+      tags: [me]
+      summary: DPDP erasure — soft-delete now, purge of DB rows and S3 objects within the published SLA
+      responses:
+        '202': { description: Erasure scheduled }
+
+  /v1/me/usage:
+    get:
+      tags: [me]
+      responses:
+        '200':
+          description: Usage in the current billing period against plan limits
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  plan: { $ref: '#/components/schemas/Plan' }
+                  periodEnd: { type: string, format: date-time }
+                  metrics:
+                    type: object
+                    additionalProperties:
+                      type: object
+                      properties:
+                        used: { type: integer }
+                        limit: { type: [integer, 'null'] }
+
+  # ───────────── Assets ─────────────
+  /v1/assets:
+    post:
+      tags: [assets]
+      summary: Reserve an asset (quota check) and get the tus upload target
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [filename, size]
+              properties:
+                filename: { type: string, maxLength: 255 }
+                size: { type: integer, minimum: 1 }
+                sha256: { type: string, pattern: '^[0-9a-f]{64}$', description: Optional; enables dedupe }
+      responses:
+        '201':
+          description: Reserved
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [asset, upload]
+                properties:
+                  asset: { $ref: '#/components/schemas/Asset' }
+                  upload:
+                    type: object
+                    required: [endpoint, metadata]
+                    properties:
+                      endpoint: { type: string, format: uri }
+                      metadata: { type: object, additionalProperties: { type: string } }
+                      chunkSize: { type: integer, default: 8388608 }
+        '200':
+          description: Same sha256 already ready for this user — no upload needed
+          content: { application/json: { schema: { type: object, properties: { asset: { $ref: '#/components/schemas/Asset' } } } } }
+        '413': { $ref: '#/components/responses/Problem' }
+        '402': { $ref: '#/components/responses/QuotaExceeded' }
+    get:
+      tags: [assets]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: kind, in: query, schema: { $ref: '#/components/schemas/AssetKind' } }
+      responses:
+        '200':
+          description: Page of assets
+          content: { application/json: { schema: { $ref: '#/components/schemas/AssetPage' } } }
+
+  /v1/assets/import-url:
+    post:
+      tags: [assets]
+      summary: Import from a direct media URL or Drive/Dropbox share link (no YouTube/Instagram)
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url: { type: string, format: uri, pattern: '^https://' }
+      responses:
+        '202':
+          description: Import job queued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  asset: { $ref: '#/components/schemas/Asset' }
+                  job: { $ref: '#/components/schemas/Job' }
+        '422': { $ref: '#/components/responses/Problem' }
+
+  /v1/assets/{assetId}:
+    parameters: [{ $ref: '#/components/parameters/AssetId' }]
+    get:
+      tags: [assets]
+      responses:
+        '200':
+          description: Asset
+          content: { application/json: { schema: { $ref: '#/components/schemas/Asset' } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [assets]
+      summary: Soft-delete; objects purged after 7 days. 409 if a project still references it unless force=true
+      parameters:
+        - { name: force, in: query, schema: { type: boolean, default: false } }
+      responses:
+        '204': { description: Deleted }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v1/assets/{assetId}/urls:
+    parameters: [{ $ref: '#/components/parameters/AssetId' }]
+    get:
+      tags: [assets]
+      summary: Short-lived (15 min) signed CloudFront URLs for this asset's renditions
+      parameters:
+        - name: include
+          in: query
+          style: form
+          explode: false
+          schema:
+            type: array
+            items: { enum: [original, proxy, thumbs, thumbsIndex, peaks, audio16k] }
+      responses:
+        '200':
+          description: Signed URLs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  expiresAt: { type: string, format: date-time }
+                  urls: { type: object, additionalProperties: { type: string, format: uri } }
+
+  /v1/assets/{assetId}/transcripts:
+    parameters: [{ $ref: '#/components/parameters/AssetId' }]
+    get:
+      tags: [transcripts]
+      responses:
+        '200':
+          description: Transcripts of this asset, newest first
+          content:
+            application/json:
+              schema: { type: array, items: { $ref: '#/components/schemas/Transcript' } }
+
+  # ───────────── Projects ─────────────
+  /v1/projects:
+    post:
+      tags: [projects]
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [doc]
+              properties:
+                doc: { $ref: '#/components/schemas/ProjectDoc' }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } }
+        '422': { $ref: '#/components/responses/SchemaInvalid' }
+    get:
+      tags: [projects]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Project summaries (no doc), most recently updated first
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/ProjectSummary' } }
+                  nextCursor: { type: [string, 'null'] }
+
+  /v1/projects/{projectId}:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [projects]
+      responses:
+        '200':
+          description: Project with current doc and revision
+          content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } }
+        '404': { $ref: '#/components/responses/Problem' }
+    delete:
+      tags: [projects]
+      responses:
+        '204': { description: Soft-deleted (recoverable for 30 days) }
+
+  /v1/projects/{projectId}/ops:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [projects]
+      summary: Append patch batches (autosave). Requires the edit lease.
+      description: |
+        Applied atomically in order. The resulting document must validate against the schema (else 422, nothing applied).
+        `baseRevision` must equal the current revision (else 409 with the current revision; the client fetches ops since its base).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId, leaseId, baseRevision, ops]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                leaseId: { type: string }
+                baseRevision: { type: integer, minimum: 0 }
+                ops:
+                  type: array
+                  minItems: 1
+                  maxItems: 500
+                  items: { $ref: '#/components/schemas/JsonPatch' }
+      responses:
+        '200':
+          description: Applied
+          content: { application/json: { schema: { type: object, properties: { revision: { type: integer } } } } }
+        '409':
+          description: Stale baseRevision or lease lost
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Problem' }
+                  - type: object
+                    properties:
+                      currentRevision: { type: integer }
+                      code: { enum: [stale_revision, lease_lost] }
+        '413': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/SchemaInvalid' }
+    get:
+      tags: [projects]
+      summary: Ops after a revision (for catching up a read-only tab or resolving 409)
+      parameters:
+        - { name: since, in: query, required: true, schema: { type: integer, minimum: 0 } }
+      responses:
+        '200':
+          description: Ops in order. 410 if pruned — reload the full doc instead.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  revision: { type: integer }
+                  ops:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        revision: { type: integer }
+                        patches: { $ref: '#/components/schemas/JsonPatch' }
+        '410': { $ref: '#/components/responses/Problem' }
+
+  /v1/projects/{projectId}/lease:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    post:
+      tags: [projects]
+      summary: Acquire or renew the single-editor lease (TTL 60 s; renew every 20 s)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [clientId]
+              properties:
+                clientId: { type: string, maxLength: 64 }
+                leaseId: { type: string, description: Present when renewing }
+                takeover: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Lease held
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  leaseId: { type: string }
+                  expiresAt: { type: string, format: date-time }
+        '423':
+          description: Held by another client (open read-only, offer takeover)
+          content:
+            application/problem+json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Problem' }
+                  - type: object
+                    properties:
+                      heldBy: { type: object, properties: { deviceLabel: { type: string }, since: { type: string, format: date-time } } }
+    delete:
+      tags: [projects]
+      parameters:
+        - { name: leaseId, in: query, required: true, schema: { type: string } }
+      responses:
+        '204': { description: Released }
+
+  /v1/projects/{projectId}/versions:
+    parameters: [{ $ref: '#/components/parameters/ProjectId' }]
+    get:
+      tags: [projects]
+      responses:
+        '200':
+          description: Version list (no docs)
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/VersionSummary' } } } }
+    post:
+      tags: [projects]
+      summary: Save a named version of the current doc, or upload a conflicting offline doc as a `conflict` version
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                label: { type: string, maxLength: 100 }
+                conflictDoc: { $ref: '#/components/schemas/ProjectDoc' }
+      responses:
+        '201':
+          description: Saved
+          content: { application/json: { schema: { $ref: '#/components/schemas/VersionSummary' } } }
+
+  /v1/projects/{projectId}/versions/{versionId}:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [projects]
+      responses:
+        '200':
+          description: Version with doc
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/VersionSummary' }
+                  - type: object
+                    properties: { doc: { $ref: '#/components/schemas/ProjectDoc' } }
+
+  /v1/projects/{projectId}/versions/{versionId}/restore:
+    parameters:
+      - { $ref: '#/components/parameters/ProjectId' }
+      - { name: versionId, in: path, required: true, schema: { type: string, format: uuid } }
+    post:
+      tags: [projects]
+      summary: Make this version current (current doc is saved as an `auto` version first). Requires the lease.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [leaseId], properties: { leaseId: { type: string } } }
+      responses:
+        '200':
+          description: Restored
+          content: { application/json: { schema: { $ref: '#/components/schemas/Project' } } }
+
+  # ───────────── Jobs ─────────────
+  /v1/jobs:
+    post:
+      tags: [jobs]
+      summary: Submit an AI or cloud-export job. Results never modify projects; the client applies them.
+      parameters: [{ $ref: '#/components/parameters/IdempotencyKey' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/JobRequest' }
+      responses:
+        '202':
+          description: Queued
+          content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } }
+        '402': { $ref: '#/components/responses/QuotaExceeded' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+    get:
+      tags: [jobs]
+      parameters:
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+        - { name: status, in: query, schema: { $ref: '#/components/schemas/JobStatus' } }
+        - { name: assetId, in: query, schema: { type: string, format: uuid } }
+        - { name: projectId, in: query, schema: { type: string, format: uuid } }
+      responses:
+        '200':
+          description: Page of jobs
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Job' } }
+                  nextCursor: { type: [string, 'null'] }
+
+  /v1/jobs/{jobId}:
+    parameters: [{ $ref: '#/components/parameters/JobId' }]
+    get:
+      tags: [jobs]
+      responses:
+        '200':
+          description: Job
+          content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } }
+
+  /v1/jobs/{jobId}/cancel:
+    parameters: [{ $ref: '#/components/parameters/JobId' }]
+    post:
+      tags: [jobs]
+      responses:
+        '202': { description: Cancel requested (workers check between chunks) }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v1/jobs/{jobId}/retry:
+    parameters: [{ $ref: '#/components/parameters/JobId' }]
+    post:
+      tags: [jobs]
+      summary: Retry a failed job from its last checkpoint
+      responses:
+        '202':
+          description: Requeued
+          content: { application/json: { schema: { $ref: '#/components/schemas/Job' } } }
+
+  # ───────────── Transcripts ─────────────
+  /v1/transcripts/{transcriptId}:
+    parameters:
+      - { name: transcriptId, in: path, required: true, schema: { type: string, format: uuid } }
+    get:
+      tags: [transcripts]
+      responses:
+        '200':
+          description: Metadata plus a signed URL to the word-level JSON
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - { $ref: '#/components/schemas/Transcript' }
+                  - type: object
+                    properties:
+                      wordsUrl: { type: string, format: uri }
+
+  # ───────────── Events ─────────────
+  /v1/events:
+    get:
+      tags: [events]
+      summary: Server-Sent Events stream of the user's job updates
+      description: |
+        Event types: `job.updated` (data: Job), `asset.updated` (data: Asset), `project.revision` (data: {projectId, revision}).
+        Supports `Last-Event-ID` for resume. EventSource cannot send headers, so the web client passes a short-lived `ticket`.
+      parameters:
+        - { name: ticket, in: query, schema: { type: string } }
+      responses:
+        '200':
+          description: Event stream
+          content: { text/event-stream: { schema: { type: string } } }
+
+  /v1/events/ticket:
+    post:
+      tags: [events]
+      summary: One-time 60 s ticket for opening the SSE stream
+      responses:
+        '200':
+          description: Ticket
+          content: { application/json: { schema: { type: object, properties: { ticket: { type: string } } } } }
+
+  /v1/push-subscriptions:
+    post:
+      tags: [events]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [endpoint, keys]
+              properties:
+                endpoint: { type: string, format: uri }
+                keys:
+                  type: object
+                  required: [p256dh, auth]
+                  properties: { p256dh: { type: string }, auth: { type: string } }
+      responses:
+        '201': { description: Subscribed }
+    delete:
+      tags: [events]
+      parameters:
+        - { name: endpoint, in: query, required: true, schema: { type: string, format: uri } }
+      responses:
+        '204': { description: Removed }
+
+  # ───────────── Library ─────────────
+  /v1/library/clips:
+    get:
+      tags: [library]
+      summary: Search the clip library (trigram match over title and transcript in both scripts)
+      parameters:
+        - { name: q, in: query, schema: { type: string, maxLength: 200 } }
+        - name: tags
+          in: query
+          style: form
+          explode: false
+          schema: { type: array, items: { type: string } }
+        - { $ref: '#/components/parameters/Cursor' }
+        - { $ref: '#/components/parameters/Limit' }
+      responses:
+        '200':
+          description: Page of clips
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/LibraryClip' } }
+                  nextCursor: { type: [string, 'null'] }
+    post:
+      tags: [library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/LibraryClipInput' }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/LibraryClip' } } }
+
+  /v1/library/clips/{clipId}:
+    parameters:
+      - { name: clipId, in: path, required: true, schema: { type: string, format: uuid } }
+    patch:
+      tags: [library]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                title: { type: string, maxLength: 200 }
+                tags: { type: array, maxItems: 30, items: { type: string, maxLength: 40 } }
+      responses:
+        '200':
+          description: Updated
+          content: { application/json: { schema: { $ref: '#/components/schemas/LibraryClip' } } }
+    delete:
+      tags: [library]
+      responses:
+        '204': { description: Deleted }
+
+  # ───────────── Dictionary ─────────────
+  /v1/dictionary:
+    get:
+      tags: [dictionary]
+      responses:
+        '200':
+          description: All entries (names, brands, terms, fillers)
+          content: { application/json: { schema: { type: array, items: { $ref: '#/components/schemas/DictionaryEntry' } } } }
+    post:
+      tags: [dictionary]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [kind, term]
+              properties:
+                kind: { enum: [name, brand, term, filler] }
+                term: { type: string, minLength: 1, maxLength: 100 }
+                variants: { type: array, maxItems: 20, items: { type: string, maxLength: 100 } }
+      responses:
+        '201':
+          description: Created
+          content: { application/json: { schema: { $ref: '#/components/schemas/DictionaryEntry' } } }
+        '409': { $ref: '#/components/responses/Problem' }
+
+  /v1/dictionary/{entryId}:
+    parameters:
+      - { name: entryId, in: path, required: true, schema: { type: string, format: uuid } }
+    delete:
+      tags: [dictionary]
+      responses:
+        '204': { description: Deleted }
+
+  # ───────────── Billing ─────────────
+  /v1/billing/checkout:
+    post:
+      tags: [billing]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [plan, interval]
+              properties:
+                plan: { enum: [creator, pro] }
+                interval: { enum: [month, year] }
+      responses:
+        '200':
+          description: Razorpay subscription to open in Razorpay Checkout
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  razorpaySubscriptionId: { type: string }
+                  keyId: { type: string }
+
+  /v1/billing/webhook:
+    post:
+      tags: [billing]
+      security: []
+      summary: Razorpay webhook; verified with X-Razorpay-Signature (HMAC-SHA256), idempotent on event id
+      parameters:
+        - { name: X-Razorpay-Signature, in: header, required: true, schema: { type: string } }
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        '200': { description: Accepted }
+        '400': { $ref: '#/components/responses/Problem' }
+
+  # ───────────── Ops ─────────────
+  /healthz:
+    get:
+      tags: [ops]
+      security: []
+      responses:
+        '200': { description: Process alive }
+  /readyz:
+    get:
+      tags: [ops]
+      security: []
+      responses:
+        '200': { description: DB and Redis reachable }
+        '503': { description: Not ready }
+  /internal/tus-hooks:
+    post:
+      tags: [ops]
+      security: [{ hookSecret: [] }]
+      summary: tusd HTTP hooks (pre-create, post-finish). Only reachable from the tusd security group.
+      requestBody:
+        required: true
+        content: { application/json: { schema: { type: object } } }
+      responses:
+        '200': { description: Hook response per tusd protocol }
+
+components:
+  securitySchemes:
+    bearer: { type: http, scheme: bearer, bearerFormat: JWT }
+    hookSecret: { type: apiKey, in: header, name: X-Hook-Secret }
+
+  parameters:
+    AssetId: { name: assetId, in: path, required: true, schema: { type: string, format: uuid } }
+    ProjectId: { name: projectId, in: path, required: true, schema: { type: string, format: uuid } }
+    JobId: { name: jobId, in: path, required: true, schema: { type: string, format: uuid } }
+    Cursor: { name: cursor, in: query, schema: { type: string } }
+    Limit: { name: limit, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 50 } }
+    IdempotencyKey: { name: Idempotency-Key, in: header, schema: { type: string, maxLength: 100 } }
+
+  responses:
+    Problem:
+      description: Error
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    RateLimited:
+      description: Too many requests
+      headers:
+        Retry-After: { schema: { type: integer } }
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    QuotaExceeded:
+      description: Plan quota exceeded (code `quota_exceeded`, with `metric`, `used`, `limit`)
+      content: { application/problem+json: { schema: { $ref: '#/components/schemas/Problem' } } }
+    SchemaInvalid:
+      description: Document fails project.schema.json or semantic validation
+      content:
+        application/problem+json:
+          schema:
+            allOf:
+              - { $ref: '#/components/schemas/Problem' }
+              - type: object
+                properties:
+                  violations:
+                    type: array
+                    items:
+                      type: object
+                      properties: { path: { type: string }, message: { type: string } }
+    Session:
+      description: 'Signed in. Refresh token set as httpOnly cookie (web) or returned in body for desktop (`X-Client: desktop`).'
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [accessToken, expiresIn, user]
+            properties:
+              accessToken: { type: string }
+              expiresIn: { type: integer }
+              refreshToken: { type: string, description: Desktop only }
+              user: { $ref: '#/components/schemas/User' }
+              needsGuardianConsent: { type: boolean }
+
+  schemas:
+    Problem:
+      type: object
+      required: [type, title, status, code]
+      properties:
+        type: { type: string, format: uri }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string, description: Stable machine code, e.g. quota_exceeded, stale_revision, unsupported_media }
+        detail: { type: string }
+        instance: { type: string }
+
+    Plan: { enum: [free, creator, pro] }
+    Flicks: { type: integer, minimum: 0 }
+
+    User:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        displayName: { type: string }
+        phone: { type: [string, 'null'] }
+        email: { type: [string, 'null'] }
+        uiLocale: { enum: [hi, en] }
+        plan: { $ref: '#/components/schemas/Plan' }
+        createdAt: { type: string, format: date-time }
+
+    AssetKind: { enum: [video, audio, image, lut] }
+    Asset:
+      type: object
+      required: [id, status, originalFilename, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        kind: { oneOf: [{ $ref: '#/components/schemas/AssetKind' }, { type: 'null' }] }
+        status: { enum: [uploading, processing, ready, failed, quarantined, deleted] }
+        originalFilename: { type: string }
+        sizeBytes: { type: [integer, 'null'] }
+        sniffedMime: { type: [string, 'null'] }
+        duration: { oneOf: [{ $ref: '#/components/schemas/Flicks' }, { type: 'null' }] }
+        video:
+          type: [object, 'null']
+          properties:
+            width: { type: integer }
+            height: { type: integer }
+            fps: { type: object, properties: { num: { type: integer }, den: { type: integer } } }
+            rotation: { enum: [0, 90, 180, 270] }
+            color: { type: object }
+        audio:
+          type: [object, 'null']
+          properties:
+            channels: { type: integer }
+            sampleRate: { type: integer }
+        logProfile: { type: [string, 'null'] }
+        renditions:
+          type: object
+          description: Which derived files are ready
+          properties:
+            proxy: { type: boolean }
+            thumbs: { type: boolean }
+            peaks: { type: boolean }
+            audio16k: { type: boolean }
+        failureReason: { type: [string, 'null'] }
+        createdAt: { type: string, format: date-time }
+    AssetPage:
+      type: object
+      properties:
+        items: { type: array, items: { $ref: '#/components/schemas/Asset' } }
+        nextCursor: { type: [string, 'null'] }
+
+    ProjectDoc:
+      description: See packages/project-schema/project.schema.json (validated server-side; not inlined here)
+      type: object
+    JsonPatch:
+      description: RFC 6902 patch (array of operations)
+      type: array
+      items:
+        type: object
+        required: [op, path]
+        properties:
+          op: { enum: [add, remove, replace, move, copy, test] }
+          path: { type: string }
+          from: { type: string }
+          value: {}
+    ProjectSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        revision: { type: integer }
+        thumbnailUrl: { type: [string, 'null'], format: uri }
+        updatedAt: { type: string, format: date-time }
+    Project:
+      allOf:
+        - { $ref: '#/components/schemas/ProjectSummary' }
+        - type: object
+          properties:
+            schemaVersion: { type: integer }
+            doc: { $ref: '#/components/schemas/ProjectDoc' }
+    VersionSummary:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        revision: { type: integer }
+        kind: { enum: [auto, manual, conflict, pre_migration] }
+        label: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    JobStatus: { enum: [queued, running, delayed, succeeded, failed, canceled] }
+    JobRequest:
+      oneOf:
+        - { $ref: '#/components/schemas/TranscribeJob' }
+        - { $ref: '#/components/schemas/TranslateJob' }
+        - { $ref: '#/components/schemas/TransliterateJob' }
+        - { $ref: '#/components/schemas/FixSubtitlesJob' }
+        - { $ref: '#/components/schemas/DiarizeJob' }
+        - { $ref: '#/components/schemas/ScenesJob' }
+        - { $ref: '#/components/schemas/ReframeJob' }
+        - { $ref: '#/components/schemas/HighlightsJob' }
+        - { $ref: '#/components/schemas/ExportJob' }
+      discriminator:
+        propertyName: type
+        mapping:
+          transcribe: '#/components/schemas/TranscribeJob'
+          translate: '#/components/schemas/TranslateJob'
+          transliterate: '#/components/schemas/TransliterateJob'
+          fix_subtitles: '#/components/schemas/FixSubtitlesJob'
+          diarize: '#/components/schemas/DiarizeJob'
+          scenes: '#/components/schemas/ScenesJob'
+          reframe: '#/components/schemas/ReframeJob'
+          highlights: '#/components/schemas/HighlightsJob'
+          export: '#/components/schemas/ExportJob'
+    TranscribeJob:
+      type: object
+      required: [type, assetId, language]
+      properties:
+        type: { const: transcribe }
+        assetId: { type: string, format: uuid }
+        language: { enum: [auto, hi, en, hinglish] }
+        diarize: { type: boolean, default: false }
+        useDictionary: { type: boolean, default: true }
+    TranslateJob:
+      type: object
+      required: [type, transcriptId, target]
+      properties:
+        type: { const: translate }
+        transcriptId: { type: string, format: uuid }
+        target: { enum: [hi, en] }
+    TransliterateJob:
+      type: object
+      required: [type, transcriptId, to]
+      properties:
+        type: { const: transliterate }
+        transcriptId: { type: string, format: uuid }
+        to: { enum: [Deva, Latn] }
+    FixSubtitlesJob:
+      type: object
+      required: [type, language, segments]
+      description: Operates on the caption text currently in the project (which may differ from the stored transcript).
+      properties:
+        type: { const: fix_subtitles }
+        language: { enum: [hi, en, hi-Latn, mixed] }
+        useLlm: { type: boolean, default: true }
+        segments:
+          type: array
+          maxItems: 3000
+          items:
+            type: object
+            required: [id, text]
+            properties:
+              id: { type: string, maxLength: 64 }
+              text: { type: string, maxLength: 500 }
+    DiarizeJob:
+      type: object
+      required: [type, assetId]
+      properties:
+        type: { const: diarize }
+        assetId: { type: string, format: uuid }
+        maxSpeakers: { type: integer, minimum: 1, maximum: 10 }
+    ScenesJob:
+      type: object
+      required: [type, assetId]
+      properties:
+        type: { const: scenes }
+        assetId: { type: string, format: uuid }
+        sensitivity: { type: number, minimum: 0, maximum: 1, default: 0.5 }
+    ReframeJob:
+      type: object
+      required: [type, assetId, aspect]
+      properties:
+        type: { const: reframe }
+        assetId: { type: string, format: uuid }
+        aspect: { type: string, pattern: '^(16:9|9:16|1:1|4:5|21:9|[1-9][0-9]{1,3}x[1-9][0-9]{1,3})$' }
+        ranges:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            required: [start, end]
+            properties:
+              start: { $ref: '#/components/schemas/Flicks' }
+              end: { $ref: '#/components/schemas/Flicks' }
+    HighlightsJob:
+      type: object
+      required: [type, assetId]
+      properties:
+        type: { const: highlights }
+        assetId: { type: string, format: uuid }
+        durations:
+          type: array
+          items: { enum: [15, 30, 60] }
+          default: [15, 30, 60]
+        count: { type: integer, minimum: 1, maximum: 20, default: 5 }
+        reasonLanguage: { enum: [hi, en], default: hi }
+    ExportJob:
+      type: object
+      required: [type, projectId, revision, sequenceId, preset]
+      properties:
+        type: { const: export }
+        projectId: { type: string, format: uuid }
+        revision: { type: integer, description: Renders exactly this saved revision }
+        sequenceId: { type: string, maxLength: 64 }
+        preset: { enum: [youtube_1080, youtube_4k, reels_1080, whatsapp_720, audio_aac, audio_mp3, gif_480, custom] }
+        custom:
+          type: object
+          properties:
+            container: { enum: [mp4, webm, gif, m4a, mp3] }
+            videoCodec: { enum: [h264, h265, vp9, av1] }
+            height: { enum: [480, 720, 1080, 1440, 2160] }
+            fps: { type: object, properties: { num: { type: integer }, den: { type: integer } } }
+            targetSizeBytes: { type: integer, minimum: 1000000 }
+
+    Job:
+      type: object
+      required: [id, type, status, progress, createdAt]
+      properties:
+        id: { type: string, format: uuid }
+        type: { enum: [ingest, import_url, transcribe, translate, transliterate, fix_subtitles, diarize, scenes, reframe, highlights, export] }
+        status: { $ref: '#/components/schemas/JobStatus' }
+        progress: { type: number, minimum: 0, maximum: 1 }
+        etaSeconds: { type: [integer, 'null'] }
+        params: { type: object }
+        result:
+          description: Shape depends on type
+          oneOf:
+            - { type: 'null' }
+            - { type: object, title: transcribe/translate/transliterate, properties: { transcriptId: { type: string, format: uuid } } }
+            - type: object
+              title: fix_subtitles
+              properties:
+                suggestions:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      segmentId: { type: string }
+                      from: { type: string }
+                      to: { type: string }
+                      reason: { enum: [dictionary, rule, llm] }
+            - { type: object, title: scenes, properties: { cuts: { type: array, items: { $ref: '#/components/schemas/Flicks' } } } }
+            - type: object
+              title: reframe
+              properties:
+                aspect: { type: string }
+                keyframes:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      t: { $ref: '#/components/schemas/Flicks' }
+                      cx: { type: number }
+                      cy: { type: number }
+                      zoom: { type: number }
+            - type: object
+              title: highlights
+              properties:
+                candidates:
+                  type: array
+                  items:
+                    type: object
+                    properties:
+                      start: { $ref: '#/components/schemas/Flicks' }
+                      end: { $ref: '#/components/schemas/Flicks' }
+                      score: { type: number, minimum: 0, maximum: 1 }
+                      title: { type: string }
+                      reason: { type: string }
+                      degraded: { type: boolean, description: True when scored without the LLM }
+            - type: object
+              title: export
+              properties:
+                outputUrl: { type: string, format: uri }
+                sizeBytes: { type: integer }
+                expiresAt: { type: string, format: date-time }
+        error:
+          type: [object, 'null']
+          properties:
+            code: { type: string }
+            message: { type: string }
+            retryable: { type: boolean }
+        createdAt: { type: string, format: date-time }
+        startedAt: { type: [string, 'null'], format: date-time }
+        finishedAt: { type: [string, 'null'], format: date-time }
+
+    Transcript:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        assetId: { type: string, format: uuid }
+        language: { enum: [hi, en, hi-Latn, mixed] }
+        script: { enum: [Deva, Latn] }
+        kind: { enum: [transcript, translation, transliteration] }
+        derivedFrom: { type: [string, 'null'], format: uuid }
+        model: { type: string }
+        modelVersion: { type: string }
+        createdAt: { type: string, format: date-time }
+
+    LibraryClipInput:
+      type: object
+      required: [assetId, start, end]
+      properties:
+        assetId: { type: string, format: uuid }
+        projectId: { type: string, format: uuid }
+        start: { $ref: '#/components/schemas/Flicks' }
+        end: { $ref: '#/components/schemas/Flicks' }
+        title: { type: string, maxLength: 200 }
+        tags: { type: array, maxItems: 30, items: { type: string, maxLength: 40 } }
+    LibraryClip:
+      allOf:
+        - { $ref: '#/components/schemas/LibraryClipInput' }
+        - type: object
+          properties:
+            id: { type: string, format: uuid }
+            score: { type: [number, 'null'] }
+            reason: { type: [string, 'null'] }
+            source: { enum: [manual, highlight, scene] }
+            thumbnailUrl: { type: [string, 'null'], format: uri }
+            createdAt: { type: string, format: date-time }
+
+    DictionaryEntry:
+      type: object
+      properties:
+        id: { type: string, format: uuid }
+        kind: { enum: [name, brand, term, filler] }
+        term: { type: string }
+        variants: { type: array, items: { type: string } }
+        createdAt: { type: string, format: date-time }
