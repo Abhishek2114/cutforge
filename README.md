@@ -16,6 +16,32 @@ A Hindi-first, non-destructive video editor for Indian creators, built as a web 
 | [packages/project-schema/examples/](packages/project-schema/examples/) | Example projects: a Hindi vlog with a 9:16 reel, karaoke captions, auto grade and silence cuts; a minimal new project |
 | [docs/api.yaml](docs/api.yaml) | REST API, OpenAPI 3.1 (36 endpoints) |
 
+## Brief coverage
+
+The brief asks for 7 deliverables, with a stop for approval after each. This repo is **Deliverable 1**. Every feature in the brief is designed here; code for the features arrives in Deliverables 3–7. `§` refers to sections of [architecture.md](docs/architecture.md).
+
+| Brief requirement | Where it is answered | Status |
+|---|---|---|
+| ≤ 5 clarifying questions before starting | §0 (hosting, translation engine, collaboration, codec licensing) | Done |
+| 1. Upload: tus, magic bytes, proxies, thumbs, waveform | §6 · API `/v1/assets` · `assets` table | Designed |
+| 2. Sequence: multi-track, trim/split/ripple, unlimited undo | §1 Bet 3, §4 · schema `sequence/tracks/items` | Designed |
+| 3. Ratio presets, Fit/Fill/Blur, auto-reframe | §5 step 4, §7 · schema `clip.reframe` per aspect · API `reframe` job | Designed |
+| 4. Motion, transitions, keyframes, speed ramps | §5 steps 1, 5 · schema `transition`, `keyframe`, `speed` | Designed |
+| 4. Auto colour grading, match, log, LUT, skin protection, parity | §5 step 3 (one 3D LUT per clip) + golden-frame contract, §7 · schema `grade`, `look` | Designed |
+| 5. Hindi/English/Hinglish subtitles, translate, transliterate, fix pass | §7 · API `transcribe/translate/transliterate/fix_subtitles` · `transcripts`, `dictionary_entries` | Designed |
+| 5. Devanagari rendering (HarfBuzz, libass, Noto/Mukta/Poppins) | §5 step 7 · schema `textStyle/captionStyle` (bundled fonts only) | Designed |
+| 5. Subtitles stay in sync after edits | §1 Bet 2: captions stored in source time | Designed |
+| 6. Highlights, make 5 reels, clip library | §7 · API `highlights` · `library_clips` | Designed |
+| 6. Auto silence cutter: VAD, controls, modes, review, smoothing, fillers | §7 · schema `cutSets` (editable regions, accept/reject) | Designed |
+| 7. Export: formats, presets, queue, resume, notifications | §8 · API `export` job, `/v1/events` | Designed |
+| Non-destructive versioned JSON + migrations | §9 · [project.schema.json](packages/project-schema/project.schema.json) | **Built + tested** |
+| Autosave, crash recovery, offline | §9 | Designed |
+| Performance, low-end mode, accessibility, Hindi UI | §13, §14 | Designed |
+| Security & reliability | §11, §12 · Postgres row-level security | **RLS built + tested in CI** |
+| Legal & licensing review | §16 | Done (needs counsel review) |
+| Quality bar: WER, golden frames, silence false-cut rate | §15 (methods + pass bars) | Planned for D3–D6 |
+| Deliverable 1 files: architecture, data model, schema, API spec, risks | `docs/`, `packages/project-schema/`, §17 | **Done, CI green** |
+
 ## Key decisions
 
 1. **One render engine everywhere.** A Rust + wgpu + WGSL compositor runs as WebAssembly for the browser preview, natively in the desktop app, and as a CLI for cloud export. FFmpeg only decodes, encodes and muxes. This is what makes "preview = export" achievable and testable.
