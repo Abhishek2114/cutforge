@@ -1,5 +1,7 @@
 # CutForge
 
+[![ci](https://github.com/Abhishek2114/cutforge/actions/workflows/ci.yml/badge.svg)](https://github.com/Abhishek2114/cutforge/actions/workflows/ci.yml)
+
 A Hindi-first, non-destructive video editor for Indian creators, built as a web app and a desktop app (Tauri) from one codebase. The wedge: accurate Hindi/Hinglish/English subtitles with correct Devanagari rendering, one-click reels, auto colour grading, an auto silence cutter, and smooth editing on mid-range laptops and phones.
 
 **Status:** Deliverable 1 of 7 (architecture, data model, project schema, API spec, risks).
@@ -24,10 +26,16 @@ A Hindi-first, non-destructive video editor for Indian creators, built as a web 
 
 ## Verify
 
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push:
+1. The project schema accepts both examples and rejects 18 deliberately broken documents.
+2. The API spec is valid OpenAPI 3.1.
+3. The data model loads into a real Postgres 16.
+4. Row-level security holds ([tests/sql/rls_smoke.sql](tests/sql/rls_smoke.sql)): a user sees only their own rows, cannot write rows for another user, and sees nothing when no user is set.
+
+To run check 1 locally:
 ```bash
 python3 packages/project-schema/check_schema.py
 ```
-Expected output: `ok: 2 examples valid, 18 invalid docs rejected` (needs `pip install jsonschema`).
 
 ## Roadmap
 

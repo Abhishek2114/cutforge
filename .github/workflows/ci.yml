@@ -1,0 +1,31 @@
+name: ci
+on: [push, pull_request]
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 2s --health-timeout 5s --health-retries 15
+    env:
+      PGHOST: localhost
+      PGUSER: postgres
+      PGPASSWORD: postgres
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install jsonschema pyyaml openapi-spec-validator
+      - name: Project schema
+        run: python packages/project-schema/check_schema.py
+      - name: API spec (OpenAPI 3.1)
+        run: openapi-spec-validator docs/api.yaml
+      - name: Data model loads into Postgres 16
+        run: psql -v ON_ERROR_STOP=1 -q -f docs/data-model.sql
+      - name: Row-level security isolation
+        run: psql -q -f tests/sql/rls_smoke.sql

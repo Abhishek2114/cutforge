@@ -251,7 +251,7 @@ CREATE TABLE dictionary_entries (
 );
 
 -- ───────────────────────── Row-level security (defence in depth) ─────────────────────────
--- API sets per-transaction: SET LOCAL app.user_id = '<uuid>'. Workers use a role with BYPASSRLS.
+-- API sets per-transaction: SET LOCAL app.user_id = '<uuid>'. Unset or empty = no rows. Workers use a role with BYPASSRLS.
 ALTER TABLE assets             ENABLE ROW LEVEL SECURITY;
 ALTER TABLE projects           ENABLE ROW LEVEL SECURITY;
 ALTER TABLE jobs               ENABLE ROW LEVEL SECURITY;
@@ -260,11 +260,11 @@ ALTER TABLE library_clips      ENABLE ROW LEVEL SECURITY;
 ALTER TABLE dictionary_entries ENABLE ROW LEVEL SECURITY;
 ALTER TABLE usage_ledger       ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY owner_only ON assets             USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON projects           USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON jobs               USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON transcripts        USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON library_clips      USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON dictionary_entries USING (owner_id = current_setting('app.user_id')::uuid);
-CREATE POLICY owner_only ON usage_ledger       USING (owner_id = current_setting('app.user_id')::uuid);
+CREATE POLICY owner_only ON assets             USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON projects           USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON jobs               USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON transcripts        USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON library_clips      USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON dictionary_entries USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
+CREATE POLICY owner_only ON usage_ledger       USING (owner_id = nullif(current_setting('app.user_id', true), '')::uuid);
 -- project_ops / project_versions / project_assets are reached only through a project the caller owns (API joins on projects).
