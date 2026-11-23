@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { produce } from 'immer'
-import { autoCorrection, findSilences, framingFor } from './auto'
+import { autoCorrection, findSilences, framingFor, gapsBetween } from './auto'
 import { FLICKS, addAsset, clips, newDoc, removeRanges, type Asset } from './model'
 
 const RATE = 16000
@@ -32,6 +32,19 @@ describe('findSilences', () => {
   it('never cuts audio without speech/pause contrast (music, constant noise)', () => {
     expect(findSilences(signal([3, 0.3]), RATE)).toEqual([])
     expect(findSilences(signal([3, 0]), RATE)).toEqual([])
+  })
+})
+
+describe('gapsBetween (pauses from the voice detector)', () => {
+  it('turns gaps between speech into cuts with breathing room', () => {
+    expect(round(gapsBetween([[0.5, 2], [3.2, 5]], 6))).toEqual([[0, 0.4], [2.1, 3.1], [5.1, 6]])
+  })
+  it('keeps short gaps (natural pacing) and overlapping segments', () => {
+    expect(gapsBetween([[0, 2], [2.3, 4], [3.5, 5]], 5)).toEqual([])
+  })
+  it('cuts nothing when the detector hears almost no voice', () => {
+    expect(gapsBetween([], 30)).toEqual([])
+    expect(gapsBetween([[10, 11]], 30)).toEqual([]) // 3% speech: probably music or ambience
   })
 })
 

@@ -3,13 +3,16 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "predev": "node scripts/copy-vad.mjs",
     "dev": "vite",
+    "prebuild": "node scripts/copy-vad.mjs",
     "build": "tsc && vite build",
     "typecheck": "tsc",
     "test": "vitest run src",
     "e2e": "playwright test"
   },
   "dependencies": {
+    "@ricky0123/vad-web": "^0.0.31",
     "immer": "^11.2.10",
     "react": "^19.3.1",
     "react-dom": "^19.3.1",

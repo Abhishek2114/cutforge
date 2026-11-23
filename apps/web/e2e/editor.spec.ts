@@ -48,6 +48,56 @@ async function makeVideo(page: Page, label: string, w: number, h: number, secs: 
   return Buffer.from(b64, 'base64')
 }
 
+// A dark video whose audio is: speech, `gap` seconds of loud room noise (no voice), speech again.
+async function makeSpeechVideo(page: Page, wav: Buffer, gap: number) {
+  const { b64, speechSecs } = await page.evaluate(async ([wav64, gap]) => {
+    const ac = new AudioContext()
+    const speech = await ac.decodeAudioData(Uint8Array.from(atob(wav64), (ch) => ch.charCodeAt(0)).buffer)
+    const noise = ac.createBuffer(1, Math.round(gap * ac.sampleRate), ac.sampleRate)
+    const nd = noise.getChannelData(0)
+    for (let i = 0; i < nd.length; i++) nd[i] = (Math.random() * 2 - 1) * 0.12 // about as loud as the voice
+    const dst = ac.createMediaStreamDestination()
+    const c = document.createElement('canvas')
+    c.width = 640
+    c.height = 360
+    const g = c.getContext('2d')!
+    const rec = new MediaRecorder(new MediaStream([...c.captureStream(30).getVideoTracks(), ...dst.stream.getAudioTracks()]), { mimeType: 'video/webm' })
+    const chunks: Blob[] = []
+    rec.ondataavailable = (e) => chunks.push(e.data)
+    const stopped = new Promise((r) => (rec.onstop = r))
+    rec.start()
+    const t0 = ac.currentTime + 0.1
+    const play = (buf: AudioBuffer, at: number) => {
+      const s = ac.createBufferSource()
+      s.buffer = buf
+      s.connect(dst)
+      s.start(at)
+    }
+    play(speech, t0)
+    play(noise, t0 + speech.duration)
+    play(speech, t0 + speech.duration + gap)
+    const total = 0.1 + 2 * speech.duration + gap + 0.2
+    const start = performance.now()
+    await new Promise<void>((done) => {
+      const f = () => {
+        g.fillStyle = '#262626'
+        g.fillRect(0, 0, 640, 360)
+        if ((performance.now() - start) / 1000 < total) requestAnimationFrame(f)
+        else done()
+      }
+      f()
+    })
+    rec.stop()
+    await stopped
+    await ac.close()
+    const u = new Uint8Array(await new Blob(chunks).arrayBuffer())
+    let s = ''
+    for (let i = 0; i < u.length; i += 0x8000) s += String.fromCharCode(...u.subarray(i, i + 0x8000))
+    return { b64: btoa(s), speechSecs: speech.duration }
+  }, [wav.toString('base64'), gap] as const)
+  return { bytes: Buffer.from(b64, 'base64'), speechSecs }
+}
+
 // Duration, size and the centre colour at given times of a video file, measured in the browser.
 async function probe(page: Page, bytes: Buffer, times: number[]) {
   return page.evaluate(async ([b64, times]) => {
@@ -63,7 +113,7 @@ async function probe(page: Page, bytes: Buffer, times: number[]) {
     const c = document.createElement('canvas')
     c.width = v.videoWidth
     c.height = v.videoHeight
-    const g = c.getContext('2d')!
+    const g = c.getContext('2d', { willReadFrequently: true })!
     const colours: string[] = []
     for (const t of times) {
       v.currentTime = t
@@ -90,7 +140,10 @@ const names = async (page: Page) => (await timeline(page)).map((c) => c.name)
 test('every control in the editor works', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (e) => errors.push(e.message))
-  page.on('console', (m) => m.type() === 'error' && errors.push(m.text()))
+  page.on('console', (m) => {
+    if (m.type() === 'error') errors.push(m.text())
+    if (m.type() === 'warning') console.log('browser warning:', m.text())
+  })
   const btn = (name: string | RegExp) => page.getByRole('button', { name, exact: typeof name === 'string' })
 
   await page.goto('./')
@@ -273,21 +326,24 @@ test('every control in the editor works', async ({ page }) => {
     await expect(btn(/Drop one or more videos/)).toBeVisible()
   })
 
-  await test.step('✨ Auto edit cuts the pause, fixes colour and framing; Ctrl+Z undoes it', async () => {
-    const C = await makeVideo(page, 'C', 640, 360, 4, '#262626', [1.2, 2.6]) // dark, silent from 1.2 s to 2.6 s
+  await test.step('✨ Auto edit: AI voice detection cuts a noisy pause, fixes colour and framing; Ctrl+Z undoes it', async () => {
+    const wav = readFileSync(new URL('./fixtures/speech-hi.wav', import.meta.url))
+    const { bytes, speechSecs } = await makeSpeechVideo(page, wav, 1.5)
     const chooser = page.waitForEvent('filechooser')
     await btn(/Drop one or more videos/).click()
-    await (await chooser).setFiles({ name: 'C.webm', mimeType: 'video/webm', buffer: C })
+    await (await chooser).setFiles({ name: 'C.webm', mimeType: 'video/webm', buffer: bytes })
     await expect(page.locator('.clip')).toHaveCount(1)
     const before = (await timeline(page))[0].secs
 
     await btn('✨ Auto edit').click()
-    await expect(page.locator('.status')).toContainText(/^Auto edit: removed 1 pauses \(\d\.\d s saved\), fixed colour on 1 clips/, { timeout: 30_000 })
+    await expect(page.locator('.status')).toContainText(
+      /^Auto edit: removed 1 pauses \(\d\.\d s saved, AI voice detection\), fixed colour on 1 clips/, { timeout: 60_000 })
     const after = await timeline(page)
     expect(after.map((c) => c.name)).toEqual(['C.webm', 'C.webm']) // speech before and after the pause
     const cut = before - (after[0].secs + after[1].secs)
-    expect(cut).toBeGreaterThan(0.6) // the 1.4 s pause minus breathing room (recorder timing shifts it a little)
-    expect(cut).toBeLessThan(1.4) // never eats into the speech
+    expect(cut).toBeGreaterThan(0.9) // the 1.5 s noisy pause, minus breathing room
+    expect(cut).toBeLessThan(1.6)
+    expect(after[0].secs + after[1].secs).toBeGreaterThan(2 * speechSecs - 0.3) // speech kept
     const saved = await page.evaluate(() => Object.values(JSON.parse(localStorage.getItem('cutforge:doc')!).sequences.s1.items) as any[])
     for (const clip of saved) {
       expect(clip.grade.enabled).toBe(true)

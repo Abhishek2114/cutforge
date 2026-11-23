@@ -20,11 +20,11 @@ Open http://localhost:5173 and drop in a video (MP4, MOV, WebM or MKV). You can 
 - export an MP4 (WebM in browsers without an MP4 recorder);
 - switch the UI between Hindi and English;
 - click **✨ Auto edit** (or press A) to let the app decide three things in one undoable step:
-  - **cut silences and dead air:** it measures each recording's own noise floor and only cuts pauses over 0.5 s, keeping 0.1 s of breathing room;
+  - **cut silences and dead air:** Silero VAD, a neural voice detector, tells speech apart from fans, traffic and breathing. It only cuts pauses over 0.5 s and keeps 0.1 s of breathing room, and if it hears no voice at all (music) it cuts nothing. If the model can't load, it falls back to loudness relative to the recording's own noise floor;
   - **fix colour:** brightness, contrast and saturation from frame statistics, stored as editable settings;
   - **pick framing:** Fill when the crop is small, otherwise Blur-background.
 
-  It runs entirely in the browser, so it's free, private and works offline.
+  It runs entirely in the browser, so it's free, private and works offline. The model (MIT) and the ONNX runtime (MIT) are self-hosted under `/vad/` and download once (about 4 MB compressed) on first use.
 
 Every edit autosaves, and reloading the page restores the project and its media.
 
@@ -60,7 +60,7 @@ The brief asks for 7 deliverables, with a stop for approval after each. Delivera
 | 5. Devanagari rendering (HarfBuzz, libass, Noto/Mukta/Poppins) | §5 step 7 · schema `textStyle/captionStyle` (bundled fonts only) | Designed |
 | 5. Subtitles stay in sync after edits | §1 Bet 2: captions stored in source time | Designed |
 | 6. Highlights, make 5 reels, clip library | §7 · API `highlights` · `library_clips` | Designed |
-| 6. Auto silence cutter: VAD, controls, modes, review, smoothing, fillers | §7 · schema `cutSets` (editable regions, accept/reject) | **One-click silence removal built + tested** (adaptive loudness, padding, undoable); neural VAD, review mode, fillers designed |
+| 6. Auto silence cutter: VAD, controls, modes, review, smoothing, fillers | §7 · schema `cutSets` (editable regions, accept/reject) | **One-click silence removal built + tested** (Silero VAD with a loudness fallback, padding, undoable); review mode and filler words designed |
 | 7. Export: formats, presets, queue, resume, notifications | §8 · API `export` job, `/v1/events` | **Browser MP4/WebM export built**; presets, queue, cloud designed |
 | Non-destructive versioned JSON + migrations | §9 · [project.schema.json](packages/project-schema/project.schema.json) | **Built + tested** (the editor's saved project validates against it in CI) |
 | Autosave, crash recovery, offline | §9 | **Local autosave + recovery built**; server sync designed |

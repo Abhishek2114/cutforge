@@ -1,10 +1,51 @@
 // Auto edit: decisions made from the media itself, in the viewer's browser (no server, no API key).
-// shortcut: silence detection is adaptive loudness, not a neural VAD; noisy rooms need Silero VAD (architecture §7).
+// Pauses come from Silero VAD (a neural voice detector); adaptive loudness is the fallback if it can't load.
 import type { Correction, Fit } from './model'
 
 const clamp = (x: number, lo: number, hi: number) => Math.min(Math.max(x, lo), hi)
 
-/** Pauses in seconds, already shrunk by `pad` so speech keeps a natural breath. [] when there is no clear speech/pause contrast. */
+/** Pauses (seconds) between speech segments, shrunk by `pad` for breathing room. [] when almost nothing is speech. */
+export function gapsBetween(speech: [number, number][], total: number, minSilence = 0.5, pad = 0.1): [number, number][] {
+  const talk = speech.reduce((t, [a, b]) => t + b - a, 0)
+  if (talk < total * 0.05) return [] // no voice heard (music, ambience): cutting would remove everything
+  const out: [number, number][] = []
+  let at = 0
+  for (const [a, b] of [...[...speech].sort((x, y) => x[0] - y[0]), [total, total]]) {
+    if (a - at >= minSilence) {
+      const s = at === 0 ? 0 : at + pad // leading/trailing dead air goes entirely
+      const e = a >= total ? total : a - pad
+      if (e - s > 0.05) out.push([s, e])
+    }
+    at = Math.max(at, b)
+  }
+  return out
+}
+
+const REDEMPTION_MS = 192 // two 96 ms model frames of non-speech end a segment
+
+/** Speech segments (seconds) from Silero VAD. Model + ONNX runtime are self-hosted under /vad/ (see scripts/copy-vad.mjs). */
+export async function speechSegments(samples: Float32Array, rate: number): Promise<[number, number][]> {
+  const { NonRealTimeVAD } = await import('@ricky0123/vad-web') // loaded only when Auto edit is used
+  const base = `${import.meta.env.BASE_URL}vad/`
+  const vad = await NonRealTimeVAD.new({
+    modelURL: `${base}silero_vad_legacy.onnx`,
+    ortConfig: (ort) => {
+      ort.env.wasm.wasmPaths = base
+      ort.env.wasm.numThreads = 1 // GitHub Pages can't send the headers multi-threading needs
+    },
+    positiveSpeechThreshold: 0.5,
+    negativeSpeechThreshold: 0.35,
+    redemptionMs: REDEMPTION_MS,
+    preSpeechPadMs: 0,
+    minSpeechMs: 250, // ignore clicks and coughs
+  })
+  const out: [number, number][] = []
+  // The library reports each end after the redemption wait; take that wait back off.
+  for await (const { start, end } of vad.run(samples, rate)) out.push([start / 1000, Math.max(start, end - REDEMPTION_MS) / 1000])
+  return out
+}
+
+/** Fallback: pauses by loudness relative to the recording's own noise floor. [] when there is no clear speech/pause contrast. */
 export function findSilences(x: Float32Array, rate: number, minSilence = 0.5, pad = 0.1): [number, number][] {
   const win = Math.round(rate * 0.02) // 20 ms frames
   const n = Math.floor(x.length / win)

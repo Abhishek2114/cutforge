@@ -4,7 +4,7 @@ import {
   ASPECTS, FLICKS, FRAME, addAsset, clips, move, newDoc, removeRanges, rippleDelete, seq, setAspect, setFit, setGrade, split,
   totalDuration, trim, type Aspect, type Asset, type Correction, type Doc, type Fit,
 } from './model'
-import { analyseFrames, autoCorrection, decodeAudio, findSilences, framingFor } from './auto'
+import { analyseFrames, autoCorrection, decodeAudio, findSilences, framingFor, gapsBetween, speechSegments } from './auto'
 import { Player } from './player'
 import { sniff } from './sniff'
 import { clearAll, loadDoc, loadFile, saveDoc, saveFile } from './persist'
@@ -114,11 +114,22 @@ export function App() {
       const d0 = current()
       const pauses = new Map<string, [number, number][]>()
       const looks = new Map<string, Correction>()
+      let viaAi = true
       for (const id of new Set(clips(d0).map((c) => c.assetId))) {
         const url = player.url(id)
         if (!url) continue // media missing after a restore
         const pcm = await decodeAudio(url)
-        pauses.set(id, pcm ? findSilences(pcm.samples, pcm.rate).map(([a, b]) => [Math.round(a * FLICKS), Math.round(b * FLICKS)]) : [])
+        let gaps: [number, number][] = []
+        if (pcm) {
+          try {
+            gaps = gapsBetween(await speechSegments(pcm.samples, pcm.rate), pcm.samples.length / pcm.rate)
+          } catch (e) {
+            console.warn('Voice detection unavailable, using loudness instead:', e)
+            viaAi = false // model couldn't load (e.g. offline before first use): loudness still works
+            gaps = findSilences(pcm.samples, pcm.rate)
+          }
+        }
+        pauses.set(id, gaps.map(([a, b]) => [Math.round(a * FLICKS), Math.round(b * FLICKS)]))
         looks.set(id, autoCorrection(await analyseFrames(url, d0.assets[id].duration / FLICKS)))
       }
       let n = 0, saved = 0
@@ -139,7 +150,8 @@ export function App() {
         }
       })
       setSelected(null)
-      setStatus(s.autoDone.replace('{n}', String(n)).replace('{s}', (saved / FLICKS).toFixed(1)).replace('{m}', String(looks.size)))
+      setStatus(s.autoDone.replace('{n}', String(n)).replace('{s}', (saved / FLICKS).toFixed(1))
+        .replace('{how}', viaAi ? s.viaAi : s.viaLevel).replace('{m}', String(looks.size)))
     } catch {
       setStatus(s.autoFailed)
     } finally {
