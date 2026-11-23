@@ -29,3 +29,20 @@ jobs:
         run: psql -v ON_ERROR_STOP=1 -q -f docs/data-model.sql
       - name: Row-level security isolation
         run: psql -q -f tests/sql/rls_smoke.sql
+
+  web:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
