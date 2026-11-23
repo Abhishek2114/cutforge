@@ -114,7 +114,7 @@ export class Player {
     }
     if (v.paused) {
       v.currentTime = want
-      void v.play()
+      v.play().catch(() => {}) // a play cut short by pause/seek is expected; the next tick retries
       return
     }
     const t = c.start + Math.round(v.currentTime * FLICKS) - c.sourceIn

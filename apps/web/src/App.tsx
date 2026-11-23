@@ -12,9 +12,11 @@ import { STR, type Lang } from './strings'
 const player = new Player()
 let restored = false // StrictMode runs effects twice in dev; restore media once
 const newId = () => crypto.randomUUID()
+const pad = (n: number) => String(n).padStart(2, '0')
 const fmt = (t: number) => {
-  const s = Math.max(0, t) / FLICKS
-  return `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}.${String(Math.floor((s % 1) * 30)).padStart(2, '0')}`
+  const f = Math.round(Math.max(0, t) / FRAME) // whole frames: float seconds turned 2 s + 1 frame into "2.00"
+  const s = Math.floor(f / 30)
+  return `${Math.floor(s / 60)}:${pad(s % 60)}.${pad(f % 30)}`
 }
 const initialLang = (): Lang => {
   try {

@@ -79,7 +79,16 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs on every push:
 2. The API spec is valid OpenAPI 3.1.
 3. The data model loads into a real Postgres 16.
 4. Row-level security holds ([tests/sql/rls_smoke.sql](tests/sql/rls_smoke.sql)): a user sees only their own rows, cannot write rows for another user, and sees nothing when no user is set.
-5. The web editor typechecks, passes its unit tests ([model.test.ts](apps/web/src/model.test.ts): split, trim, ripple-delete, ratio, undo/redo, magic bytes, and the saved project validating against the schema), and builds.
+5. The web editor typechecks, passes its unit tests ([model.test.ts](apps/web/src/model.test.ts): split, trim, ripple-delete, reorder, ratio, undo/redo, magic bytes, and the saved project validating against the schema), and builds.
+6. An end-to-end test ([e2e/editor.spec.ts](apps/web/e2e/editor.spec.ts)) drives the real app in a browser and uses every control:
+   - import via the drop zone and "Add video", and rejecting a fake file;
+   - play/pause, timeline seek, split, delete, undo/redo and the keyboard shortcuts;
+   - reordering, all 5 ratios, Fit/Fill/Blur, drag-trim and zoom;
+   - export, checking that the merged file has the right size, length and clip order;
+   - reload recovery, the Hindi/English toggle and New project;
+   - no console errors anywhere.
+
+   To run it against the live site: `cd apps/web && BASE_URL=https://abhishek2114.github.io/cutforge/ PW_CHANNEL=chrome npm run e2e`.
 
 To run check 1 locally:
 ```bash
